@@ -62,6 +62,9 @@
     font-size:12px;color:var(--brand-deep);background:var(--sand);
     border:1px solid var(--line);border-radius:999px;padding:4px 11px;white-space:nowrap;
   }
+  .who.sync.ok{background:var(--good-bg);border-color:#C6D9B2;color:#3F5D2A}
+  .who.sync.wait{background:var(--gold-bg);border-color:#E3C989;color:#7A5A12}
+  .who.sync.bad{background:var(--bad-bg);border-color:#E5C0B3;color:var(--bad)}
   .tabs{display:flex;gap:6px;overflow-x:auto;max-width:720px;margin:10px auto 0;padding-bottom:2px;scrollbar-width:none}
   .tabs::-webkit-scrollbar{display:none}
   .tab{
@@ -233,7 +236,10 @@
 <header class="top">
   <div class="brand">
     <h1><span class="em">🏡</span> مراقبت از خانه</h1>
-    <div class="who" id="whoNow">—</div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <span class="who sync" id="syncChip" style="display:none">☁️</span>
+      <div class="who" id="whoNow">—</div>
+    </div>
   </div>
   <nav class="tabs" id="tabs">
     <button class="tab on" data-tab="checkin">ورود</button>
@@ -339,6 +345,28 @@
   <!-- ============ SETTINGS ============ -->
   <section id="tab-settings">
     <div class="card">
+      <h2>☁️ همگام‌سازی بین گوشی‌ها</h2>
+      <p class="hint">با وصل کردن به یک Google Sheet، هر سه نفر از گوشی خودشان روی یک لیست مشترک ثبت می‌کنند. راهنمای ساخت شیت در فایل <b>SETUP-SYNC.md</b> است.</p>
+      <div class="warnbox" id="syncEmbedWarn" style="display:none;margin-bottom:11px">
+        این نسخه داخل صفحهٔ claude.ai اجرا می‌شود و اجازهٔ اتصال به سرویس بیرونی را ندارد.
+        برای همگام‌سازی، اپ را از لینک GitHub Pages باز کن.
+      </div>
+      <label class="f"><span>آدرس Web App (پایانش exec/)</span>
+        <input type="text" id="syncUrl" placeholder="https://script.google.com/macros/s/…/exec" dir="ltr"></label>
+      <label class="f"><span>رمز مشترک (همان که در اسکریپت گذاشتی)</span>
+        <input type="text" id="syncToken" placeholder="مثلاً khaneh-1404" dir="ltr"></label>
+      <div class="row">
+        <button class="btn primary" id="btnSyncSave">اتصال و همگام‌سازی</button>
+        <button class="btn" id="btnSyncNow">🔄 همگام‌سازی الان</button>
+      </div>
+      <div class="row" id="syncLinked" style="display:none;margin-top:9px">
+        <button class="btn" id="btnSyncLink">🔗 کپی لینک آماده برای بقیه</button>
+        <button class="btn danger" id="btnSyncOff">قطع اتصال</button>
+      </div>
+      <p class="hint" id="syncStatus" style="margin:11px 0 0"></p>
+    </div>
+
+    <div class="card">
       <h2>📊 خروجی اکسل</h2>
       <p class="hint">یک فایل اکسل با سه برگه: تاریخچهٔ دقیق (تاریخ، ساعت، روز هفته، نام، نوع، کد و عنوان کار، امتیاز، یادداشت)، جمع‌بندی امتیازها، و فهرست کارها.</p>
       <button class="btn excel block" id="btnExcel">📊 دانلود فایل اکسل (xlsx)</button>
@@ -433,6 +461,7 @@ function blank(){
     pos: JSON.parse(JSON.stringify(DEFAULT_POS)),
     neg: JSON.parse(JSON.stringify(DEFAULT_NEG)),
     logs: [],
+    rev: 0, configRev: 0, configDirty: false,
     ui: {person: DEFAULT_PEOPLE[0], tab:'checkin'}
   };
 }
@@ -452,6 +481,9 @@ function load(){
       pos: Array.isArray(d.pos) && d.pos.length ? d.pos : b.pos,
       neg: Array.isArray(d.neg) && d.neg.length ? d.neg : b.neg,
       logs: Array.isArray(d.logs) ? d.logs : [],
+      rev: d.rev || 0,
+      configRev: d.configRev || 0,
+      configDirty: !!d.configDirty,
       ui: Object.assign(b.ui, d.ui || {})
     };
     /* tasks saved before icons existed still get their icon back */
@@ -468,7 +500,15 @@ function load(){
 function save(){
   try{ localStorage.setItem(KEY, JSON.stringify(S)); }
   catch(e){ toast('ذخیره نشد: حافظه پر است'); }
+  queueSync();
 }
+
+/* Live records only. A delete becomes a tombstone so that the deletion
+   itself can travel to the other phones instead of the row coming back. */
+function L(){ return S.logs.filter(l => !l.deleted); }
+function touch(l){ l.updatedAt = Date.now(); l.dirty = true; }
+function dropLog(l){ l.deleted = true; touch(l); }
+function markConfig(){ S.configDirty = true; }
 
 /* ---------------- date helpers (Gregorian / میلادی) ---------------- */
 
@@ -503,22 +543,22 @@ function toast(msg){
 
 function addLog(o){
   const log = Object.assign({id:uid(), ts:Date.now(), note:''}, o);
-  S.logs.push(log); save(); return log;
+  touch(log); S.logs.push(log); save(); return log;
 }
-function logsOf(person){ return S.logs.filter(l => l.person===person); }
+function logsOf(person){ return L().filter(l => l.person===person); }
 function hasToday(person, type, taskId){
   const t = todayKey();
-  return S.logs.find(l => l.person===person && l.type===type && l.taskId===taskId && dayKey(l.ts)===t) || null;
+  return L().find(l => l.person===person && l.type===type && l.taskId===taskId && dayKey(l.ts)===t) || null;
 }
 function lastCheckin(person){
-  const c = S.logs.filter(l => l.type==='checkin' && l.person===person).sort((a,b)=>b.ts-a.ts);
+  const c = L().filter(l => l.type==='checkin' && l.person===person).sort((a,b)=>b.ts-a.ts);
   return c[0] || null;
 }
 /* gate = checked in today AND confirmed HOME today (after that check-in) */
 function gateState(person){
   const ci = lastCheckin(person);
   const checkedIn = !!(ci && dayKey(ci.ts)===todayKey());
-  const home = S.logs.filter(l => l.person===person && l.type==='pos' && l.taskId===GATE_ID && dayKey(l.ts)===todayKey())
+  const home = L().filter(l => l.person===person && l.type==='pos' && l.taskId===GATE_ID && dayKey(l.ts)===todayKey())
                      .sort((a,b)=>b.ts-a.ts)[0] || null;
   const ok = checkedIn && !!home && home.ts >= ci.ts;
   return {checkedIn, home, ok, ci};
@@ -552,7 +592,7 @@ function renderCheckin(){
     ? `آخرین ورود <b>${esc(S.ui.person)}</b>: ${stampLong(g.ci.ts)}`
     : `<b>${esc(S.ui.person)}</b> امروز چک‌این نکرده است.`;
 
-  const today = S.logs.filter(l => l.type==='checkin' && dayKey(l.ts)===todayKey()).sort((a,b)=>b.ts-a.ts);
+  const today = L().filter(l => l.type==='checkin' && dayKey(l.ts)===todayKey()).sort((a,b)=>b.ts-a.ts);
   const ul = document.getElementById('todayCheckins');
   ul.innerHTML = today.length ? today.map(l => logRow(l)).join('')
     : '<li><div class="empty">امروز هنوز کسی وارد نشده.</div></li>';
@@ -613,7 +653,7 @@ function bindTaskRows(root, type){
     const ex = hasToday(person, type, id);
     if(ex){
       if(!confirm(`ثبت امروزِ «${t.title}» برای ${person} حذف شود؟`)) return;
-      S.logs = S.logs.filter(l => l.id!==ex.id); save(); toast('ثبت حذف شد');
+      dropLog(ex); save(); toast('ثبت حذف شد');
     }else{
       if(type==='pos' && !gateState(person).ok){ toast('اول آب را روی home بگذار'); return; }
       addLog({type, person, taskId:id, code:t.code||t.id, title:t.title, icon:t.icon, by:S.ui.person});
@@ -634,7 +674,7 @@ function rangeFilter(){
 function renderScores(){
   const f = rangeFilter();
   document.getElementById('scoreBody').innerHTML = S.people.map(p => {
-    const ls = S.logs.filter(l => l.person===p && f(l));
+    const ls = L().filter(l => l.person===p && f(l));
     return `<tr>
       <td class="name" data-p="${esc(p)}"><span class="av">${avatar(p)}</span>${esc(p)}</td>
       <td><span class="pill p">${ls.filter(l=>l.type==='pos').length}+</span></td>
@@ -654,7 +694,7 @@ function renderHistory(){
     `<option ${p===keep?'selected':''}>${esc(p)}</option>`).join('');
 
   const type = document.getElementById('hType').value;
-  let ls = S.logs.slice().sort((a,b)=>b.ts-a.ts);
+  let ls = L().slice().sort((a,b)=>b.ts-a.ts);
   if(keep) ls = ls.filter(l => l.person===keep);
   if(type) ls = ls.filter(l => l.type===type);
 
@@ -688,7 +728,7 @@ function bindLogRows(root){
   root.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
     const l = S.logs.find(x => x.id===b.dataset.del);
     if(!l || !confirm('این ثبت حذف شود؟')) return;
-    S.logs = S.logs.filter(x => x.id!==l.id); save(); render(); toast('حذف شد');
+    dropLog(l); save(); render(); toast('حذف شد');
   });
 }
 
@@ -698,7 +738,7 @@ function renderSettings(){
   pa.innerHTML = S.people.map(p => `
     <li><span class="ico">${avatar(p)}</span>
       <div class="lmain"><div class="l1"><b>${esc(p)}</b></div>
-        <div class="l2">${S.logs.filter(l=>l.person===p).length} ثبت</div></div>
+        <div class="l2">${L().filter(l=>l.person===p).length} ثبت</div></div>
       <div class="lact">
         <button class="btn sm ghost" data-ren="${esc(p)}">تغییر نام</button>
         <button class="btn sm danger" data-rmp="${esc(p)}">حذف</button>
@@ -708,9 +748,9 @@ function renderSettings(){
     if(!nn || !nn.trim() || nn===old) return;
     const name = nn.trim();
     S.people = S.people.map(x => x===old ? name : x);
-    S.logs.forEach(l => { if(l.person===old) l.person=name; if(l.by===old) l.by=name; });
+    S.logs.forEach(l => { if(l.person===old){ l.person=name; touch(l); } if(l.by===old) l.by=name; });
     if(S.ui.person===old) S.ui.person = name;
-    save(); render(); toast('نام تغییر کرد');
+    markConfig(); save(); render(); toast('نام تغییر کرد');
   });
   pa.querySelectorAll('[data-rmp]').forEach(b => b.onclick = () => {
     const p = b.dataset.rmp;
@@ -718,16 +758,18 @@ function renderSettings(){
     if(!confirm(`${p} حذف شود؟ ثبت‌هایش باقی می‌مانند.`)) return;
     S.people = S.people.filter(x => x!==p);
     if(S.ui.person===p) S.ui.person = S.people[0];
-    save(); render();
+    markConfig(); save(); render();
   });
 
   document.getElementById('posAdmin').innerHTML = S.pos.map(t => taskAdminRow(t,'pos')).join('');
   document.getElementById('negAdmin').innerHTML = S.neg.map(t => taskAdminRow(t,'neg')).join('');
   bindTaskAdmin('posAdmin','pos'); bindTaskAdmin('negAdmin','neg');
 
+  renderSync();
+
   const bytes = (localStorage.getItem(KEY)||'').length;
   document.getElementById('storeInfo').textContent =
-    `${S.logs.length} ثبت • ${(bytes/1024).toFixed(1)} کیلوبایت در حافظهٔ همین مرورگر.`;
+    `${L().length} ثبت • ${(bytes/1024).toFixed(1)} کیلوبایت در حافظهٔ همین مرورگر.`;
 }
 
 function taskAdminRow(t, type){
@@ -748,7 +790,7 @@ function bindTaskAdmin(rootId, type){
     if(!confirm('این کار حذف شود؟ ثبت‌های قبلی در تاریخچه می‌مانند.')) return;
     const id = b.dataset.dt;
     if(type==='neg') S.neg = S.neg.filter(t => t.id!==id); else S.pos = S.pos.filter(t => t.id!==id);
-    save(); render(); toast('حذف شد');
+    markConfig(); save(); render(); toast('حذف شد');
   });
 }
 
@@ -811,7 +853,7 @@ function editLog(id){
       let t = task(type, kEl ? kEl.value : l.taskId) || (type==='neg'?S.neg:S.pos)[0];
       l.type=type; l.taskId=t.id; l.code=t.code||t.id; l.title=t.title; l.icon=t.icon;
     }
-    save(); closeModal(); render(); toast('ذخیره شد');
+    touch(l); save(); closeModal(); render(); toast('ذخیره شد');
   };
 }
 
@@ -842,8 +884,8 @@ function editTask(type, id){
     t.code = document.getElementById('tC').value.trim() || t.id.slice(0,4).toUpperCase();
     t.desc = document.getElementById('tD').value.trim();
     if(isNew) list.push(t);
-    S.logs.forEach(l => { if(l.taskId===t.id){ l.code=t.code; l.title=t.title; l.icon=t.icon; } });
-    save(); closeModal(); render(); toast('ذخیره شد');
+    S.logs.forEach(l => { if(l.taskId===t.id){ l.code=t.code; l.title=t.title; l.icon=t.icon; touch(l); } });
+    markConfig(); save(); closeModal(); render(); toast('ذخیره شد');
   };
 }
 
@@ -1024,7 +1066,7 @@ function historyRows(){
   const head = ['ردیف','تاریخ میلادی','ساعت','روز هفته','نام','نوع','کد کار','عنوان کار','توضیح کار',
                 'امتیاز مثبت','امتیاز منفی','یادداشت','ثبت‌کننده','شناسهٔ ثبت'];
   const rows = [head];
-  S.logs.slice().sort((a,b)=>a.ts-b.ts).forEach((l, i) => {
+  L().slice().sort((a,b)=>a.ts-b.ts).forEach((l, i) => {
     const def = l.taskId ? (task('pos', l.taskId) || task('neg', l.taskId)) : null;
     rows.push([
       i+1, dayKey(l.ts), timeStr(l.ts), weekday(l.ts), l.person, typeName(l.type),
@@ -1071,7 +1113,7 @@ function fileStamp(){
 }
 
 async function exportExcel(){
-  if(!S.logs.length){ toast('هنوز چیزی ثبت نشده'); return; }
+  if(!L().length){ toast('هنوز چیزی ثبت نشده'); return; }
   const hist = historyRows();
   const book = buildXlsx([
     {name:'تاریخچه', rows:hist, widths:[6,13,7,10,10,12,8,26,40,10,10,20,10,14]},
@@ -1165,7 +1207,10 @@ async function resetFlow(fullReset){
   bindBackupBox();
   document.getElementById('rsNo').onclick = closeModal;
   document.getElementById('rsGo').onclick = () => {
-    if(fullReset){ S = blank(); } else { S.logs = []; }
+    const rev = S.rev, cRev = S.configRev;
+    S.logs.forEach(l => { if(!l.deleted) dropLog(l); });   /* the wipe travels too */
+    const kept = S.logs;
+    if(fullReset){ const b = blank(); b.logs = kept; b.rev = rev; b.configRev = cRev; b.configDirty = true; S = b; }
     save(); closeModal(); render();
     toast(fullReset ? 'ریست کامل انجام شد' : 'ثبت‌ها پاک شدند');
   };
@@ -1195,7 +1240,7 @@ document.getElementById('btnGate').onclick = () => {
   const p = S.ui.person, g = gateState(p);
   if(g.ok){
     if(!confirm('تأیید «آب روی home» برداشته شود؟')) return;
-    S.logs = S.logs.filter(l => l.id !== g.home.id); save(); toast('تأیید برداشته شد');
+    dropLog(g.home); save(); toast('تأیید برداشته شد');
   }else{
     if(!g.checkedIn){ toast('اول چک‌این کن'); document.querySelector('.tab[data-tab="checkin"]').click(); return; }
     const t = S.pos.find(x => x.id===GATE_ID) || {code:'HOME', icon:'💧', title:'آب را روی home بگذار'};
@@ -1215,10 +1260,188 @@ document.getElementById('btnAddPerson').onclick = () => {
   const el = document.getElementById('newPerson'), n = el.value.trim();
   if(!n) return;
   if(S.people.includes(n)){ toast('این نام وجود دارد'); return; }
-  S.people.push(n); el.value=''; save(); render(); toast('اضافه شد');
+  S.people.push(n); el.value=''; markConfig(); save(); render(); toast('اضافه شد');
 };
 
+/* ---------------- sync with a Google Sheet ---------------- */
+/* The Sheet (through an Apps Script web app) is the shared source of truth.
+   Every record carries a server-assigned `rev`; we pull everything newer
+   than the highest rev we've seen and push whatever is locally `dirty`.
+   A local edit always wins over an incoming copy until it has been pushed,
+   so nothing typed on a phone is lost to a background pull. */
+
+const SYNC_KEY = 'houseTracker.sync';
+const EMBEDDED = !!(window.claude && typeof window.claude.use === 'function');
+let SY = loadSync();
+let syncSt = {busy:false, err:'', at:0};
+let syncTimer;
+
+function loadSync(){
+  try{ return Object.assign({url:'', token:''}, JSON.parse(localStorage.getItem(SYNC_KEY)||'{}')); }
+  catch(e){ return {url:'', token:''}; }
+}
+function saveSync(){ localStorage.setItem(SYNC_KEY, JSON.stringify(SY)); }
+function syncOn(){ return !!SY.url; }
+function dirtyLogs(){ return S.logs.filter(l => l.dirty); }
+function anythingDirty(){ return S.configDirty || S.logs.some(l => l.dirty); }
+
+function queueSync(){
+  if(!syncOn() || !anythingDirty()) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => doSync(), 1200);
+}
+
+function wireLog(l){
+  return {id:l.id, ts:l.ts, person:l.person, type:l.type, taskId:l.taskId||'',
+          code:l.code||'', title:l.title||'', icon:l.icon||'', note:l.note||'',
+          by:l.by||'', deleted:!!l.deleted};
+}
+
+async function doSync(quiet, opts){
+  if(!syncOn() || syncSt.busy) return {ok:false};
+  syncSt.busy = true; paintSync();
+  const sent = dirtyLogs().map(l => ({id:l.id, at:l.updatedAt}));
+  /* on a first connect we adopt the Sheet's task list instead of overwriting it */
+  const pushCfg = S.configDirty && !(opts && opts.noConfig);
+  try{
+    const payload = {token:SY.token, since:S.rev||0, logs:dirtyLogs().map(wireLog)};
+    if(pushCfg) payload.config = {people:S.people, pos:S.pos, neg:S.neg};
+    const res = await fetch(SY.url, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},  /* keeps it a simple request — no CORS preflight */
+      body: JSON.stringify(payload),
+      redirect:'follow'
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const j = await res.json();
+    if(!j.ok) throw new Error(j.error || 'پاسخ نامعتبر سرور');
+    applyRemote(j, sent, pushCfg);
+    syncSt.err = ''; syncSt.at = Date.now();
+    save(); render();
+    return {ok:true, hadConfig: !!j.config};
+  }catch(e){
+    syncSt.err = (e && e.message) || 'خطای شبکه';
+    if(!quiet) toast('همگام‌سازی نشد: ' + syncSt.err);
+    paintSync();
+    return {ok:false, error:syncSt.err};
+  }finally{
+    syncSt.busy = false; paintSync();
+  }
+}
+
+function applyRemote(j, sent, pushedCfg){
+  /* a record we pushed is clean again only if it hasn't changed since */
+  const sentAt = {}; sent.forEach(x => sentAt[x.id] = x.at);
+  S.logs.forEach(l => { if(l.dirty && sentAt[l.id] === l.updatedAt) l.dirty = false; });
+
+  const byId = {}; S.logs.forEach(l => byId[l.id] = l);
+  (j.logs || []).forEach(r => {
+    const local = byId[r.id];
+    if(local && local.dirty) return;              /* unpushed local edit wins */
+    const rec = Object.assign({}, r, {rev:r.rev, dirty:false});
+    if(local) Object.assign(local, rec); else { S.logs.push(rec); byId[r.id] = rec; }
+  });
+
+  if(j.config && j.config.rev > (S.configRev||0) && !S.configDirty){
+    const c = j.config.data || {};
+    if(Array.isArray(c.people) && c.people.length) S.people = c.people;
+    if(Array.isArray(c.pos) && c.pos.length) S.pos = c.pos;
+    if(Array.isArray(c.neg) && c.neg.length) S.neg = c.neg;
+    S.configRev = j.config.rev;
+    if(!S.people.includes(S.ui.person)) S.ui.person = S.people[0];
+  }else if(pushedCfg && j.config && j.config.rev){
+    S.configDirty = false; S.configRev = j.config.rev;
+  }
+  if(typeof j.maxRev === 'number') S.rev = Math.max(S.rev||0, j.maxRev);
+}
+
+function paintSync(){
+  const el = document.getElementById('syncChip');
+  if(!el) return;
+  if(!syncOn()){ el.style.display='none'; return; }
+  el.style.display = '';
+  const pend = anythingDirty();
+  el.textContent = syncSt.busy ? '⏳ همگام‌سازی…'
+    : syncSt.err ? '⚠️ آفلاین'
+    : pend ? '⏳ در صف'
+    : '☁️ همگام';
+  el.className = 'who sync ' + (syncSt.err ? 'bad' : pend || syncSt.busy ? 'wait' : 'ok');
+  const s = document.getElementById('syncStatus');
+  if(s){
+    s.innerHTML = !syncOn() ? 'وصل نیست.'
+      : (syncSt.err ? `<b style="color:var(--bad)">خطا:</b> ${esc(syncSt.err)}`
+         : syncSt.at ? `آخرین همگام‌سازی: ${stamp(syncSt.at)}` : 'هنوز همگام نشده.')
+        + (pend ? ' • تغییرات ثبت‌نشده در صف است' : '');
+  }
+}
+
+function shareLink(){
+  const base = location.href.split('#')[0];
+  return base + '#sync=' + btoa(unescape(encodeURIComponent(JSON.stringify({u:SY.url, t:SY.token}))));
+}
+
+function renderSync(){
+  document.getElementById('syncUrl').value = SY.url || '';
+  document.getElementById('syncToken').value = SY.token || '';
+  document.getElementById('syncEmbedWarn').style.display = EMBEDDED ? '' : 'none';
+  document.getElementById('syncLinked').style.display = syncOn() ? '' : 'none';
+  paintSync();
+}
+
+document.getElementById('btnSyncSave').onclick = async () => {
+  const u = document.getElementById('syncUrl').value.trim();
+  const t = document.getElementById('syncToken').value.trim();
+  if(u && !/^https:\/\/script\.google\.com\/.*\/exec/.test(u) && !confirm('این آدرس شبیه آدرس Apps Script نیست. باز هم ذخیره شود؟')) return;
+  SY = {url:u, token:t}; saveSync();
+  if(!u){ renderSync(); toast('اتصال قطع شد'); return; }
+  S.logs.forEach(l => l.dirty = true);     /* everything logged on this phone so far */
+  save();
+  const r = await doSync(false, {noConfig:true});
+  if(r.ok && !r.hadConfig){                /* empty Sheet — seed it with our task list */
+    markConfig(); save();
+    await doSync(true);
+  }
+  renderSync();
+  if(r.ok) toast('وصل شد — اطلاعات همگام شد');
+};
+document.getElementById('btnSyncNow').onclick = async () => {
+  if(!syncOn()){ toast('اول آدرس را وارد کن'); return; }
+  const r = await doSync();
+  if(r.ok) toast('همگام شد');
+};
+document.getElementById('btnSyncOff').onclick = () => {
+  if(!confirm('اتصال قطع شود؟ اطلاعات روی این گوشی باقی می‌ماند.')) return;
+  SY = {url:'', token:''}; saveSync(); renderSync(); toast('اتصال قطع شد');
+};
+document.getElementById('btnSyncLink').onclick = async () => {
+  const link = shareLink();
+  try{ await navigator.clipboard.writeText(link); toast('لینک کپی شد — برای بقیه بفرست'); }
+  catch(e){ openModal('لینک آماده برای بقیه', `
+    <p class="hint">این لینک را برای فاطیما و محمد بفرست؛ با باز کردنش، گوشی‌شان خودکار به همین شیت وصل می‌شود.</p>
+    <label class="f"><span>لینک</span><textarea id="bkText" rows="3" readonly>${esc(link)}</textarea></label>
+    <div class="row"><button class="btn sm" id="bkCopy">📋 کپی لینک</button></div>`);
+    bindBackupBox(); }
+};
+
+/* keep the phones in step without hammering the Sheet */
+setInterval(() => { if(document.visibilityState==='visible') doSync(true); }, 25000);
+document.addEventListener('visibilitychange', () => { if(document.visibilityState==='visible') doSync(true); });
+window.addEventListener('online', () => doSync(true));
+
 /* ---------------- boot ---------------- */
+
+/* a shared link can carry the sync settings: #sync=<base64> */
+(function(){
+  const m = location.hash.match(/sync=([^&]+)/);
+  if(!m) return;
+  try{
+    const c = JSON.parse(decodeURIComponent(escape(atob(m[1]))));
+    if(c && c.u){
+      SY = {url:c.u, token:c.t||''}; saveSync();
+      history.replaceState(null, '', location.href.split('#')[0]);
+    }
+  }catch(e){ console.warn('bad sync link', e); }
+})();
 
 /* when the page is embedded by a host, the outer <html> is not ours */
 document.documentElement.setAttribute('dir','rtl');
