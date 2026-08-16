@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>مراقبت از خانه</title>
+<style>
+  :root{
+    --bg:#0f172a;
+    --bg2:#111c33;
+    --card:#16233d;
+    --card2:#1c2b49;
+    --line:#27385c;
+    --txt:#e8eefc;
+    --muted:#93a4c4;
+    --pos:#22c55e;
+    --neg:#ef4444;
+    --accent:#38bdf8;
+    --warn:#fbbf24;
+    --r:14px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg);
+    color:var(--txt);
+    font-family:'Vazirmatn','IRANSans',Tahoma,'Segoe UI',system-ui,sans-serif;
+    font-size:15px;line-height:1.75;
+    padding-bottom:90px;
+  }
+  .wrap{max-width:720px;margin:0 auto;padding:14px}
+  header.top{
+    position:sticky;top:0;z-index:20;
+    background:linear-gradient(180deg,var(--bg) 70%,rgba(15,23,42,.85));
+    padding:12px 14px 8px;
+    border-bottom:1px solid var(--line);
+  }
+  .brand{display:flex;align-items:center;justify-content:space-between;gap:10px;max-width:720px;margin:0 auto}
+  .brand h1{font-size:17px;margin:0;font-weight:700}
+  .brand .who{font-size:12px;color:var(--muted)}
+  .tabs{display:flex;gap:6px;overflow-x:auto;max-width:720px;margin:10px auto 0;padding-bottom:2px;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{
+    flex:0 0 auto;padding:7px 13px;border-radius:999px;border:1px solid var(--line);
+    background:var(--card);color:var(--muted);font-size:13px;cursor:pointer;white-space:nowrap;
+  }
+  .tab.on{background:var(--accent);color:#06263a;border-color:var(--accent);font-weight:700}
+  section{display:none}
+  section.on{display:block}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
+  .card h2{font-size:15px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+  .hint{color:var(--muted);font-size:12.5px;margin:0 0 10px}
+  .people{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px}
+  .person{
+    padding:12px 8px;border-radius:12px;border:1px solid var(--line);background:var(--card2);
+    text-align:center;cursor:pointer;font-weight:700;font-size:14.5px;transition:.15s;
+  }
+  .person.on{border-color:var(--accent);background:#123049;box-shadow:0 0 0 1px var(--accent) inset}
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    padding:11px 16px;border-radius:12px;border:1px solid var(--line);
+    background:var(--card2);color:var(--txt);font-family:inherit;font-size:14px;cursor:pointer;
+  }
+  .btn:active{transform:scale(.985)}
+  .btn.primary{background:var(--accent);color:#06263a;border-color:var(--accent);font-weight:700}
+  .btn.ghost{background:transparent}
+  .btn.danger{background:#3a1620;border-color:#5c2431;color:#ffb4bf}
+  .btn.block{width:100%}
+  .btn.sm{padding:6px 10px;font-size:12.5px;border-radius:9px}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  .gate{
+    border:1px solid var(--warn);background:#3a2f10;border-radius:var(--r);
+    padding:13px;margin-bottom:12px;
+  }
+  .gate.done{border-color:var(--pos);background:#0f2f1d}
+  .gate b{display:block;font-size:15px;margin-bottom:4px}
+  .gate p{margin:0 0 10px;font-size:12.5px;color:#e7d9ae}
+  .gate.done p{color:#a9e5c1}
+  ul.tasks{list-style:none;margin:0;padding:0}
+  ul.tasks li{
+    display:flex;align-items:flex-start;gap:9px;
+    padding:9px 0;border-bottom:1px dashed var(--line);
+  }
+  ul.tasks li:last-child{border-bottom:0}
+  .code{
+    flex:0 0 auto;min-width:34px;text-align:center;font-size:11px;font-weight:700;
+    padding:3px 6px;border-radius:7px;background:var(--card2);border:1px solid var(--line);color:var(--muted);
+    margin-top:2px;font-family:ui-monospace,Menlo,monospace;
+  }
+  .code.n{color:#ffb4bf;border-color:#5c2431;background:#2b1520}
+  .tinfo{flex:1;min-width:0}
+  .tinfo .t{font-size:14px}
+  .tinfo .d{font-size:11.5px;color:var(--muted);display:none;margin-top:2px}
+  .tinfo.open .d{display:block}
+  .tinfo .more{font-size:11px;color:var(--accent);cursor:pointer;user-select:none}
+  .act{flex:0 0 auto;display:flex;gap:6px;align-items:center}
+  .chk{
+    width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:var(--card2);
+    color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  }
+  .chk.on{background:var(--pos);border-color:var(--pos);color:#04240f}
+  .chk.neg{color:#ffb4bf}
+  .chk[disabled]{opacity:.35;cursor:not-allowed}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{padding:9px 6px;border-bottom:1px solid var(--line);text-align:right}
+  th{color:var(--muted);font-size:12px;font-weight:600}
+  td.name{font-weight:700;color:var(--accent);cursor:pointer}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:13px;font-weight:700}
+  .pill.p{background:#0f2f1d;color:#7ff0ac;border:1px solid #1d5637}
+  .pill.n{background:#2b1520;color:#ffb4bf;border:1px solid #5c2431}
+  .logs{list-style:none;margin:0;padding:0}
+  .logs li{
+    display:flex;gap:9px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--line);
+  }
+  .logs .dot{flex:0 0 auto;width:9px;height:9px;border-radius:50%;margin-top:8px}
+  .dot.p{background:var(--pos)} .dot.n{background:var(--neg)} .dot.c{background:var(--accent)}
+  .logs .lmain{flex:1;min-width:0}
+  .logs .lmain .l1{font-size:13.5px}
+  .logs .lmain .l2{font-size:11.5px;color:var(--muted);font-family:ui-monospace,Menlo,monospace;direction:ltr;text-align:right}
+  .logs .lact{display:flex;gap:5px}
+  select,input[type=text],input[type=datetime-local],textarea{
+    width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);
+    background:var(--bg2);color:var(--txt);font-family:inherit;font-size:14px;
+  }
+  label.f{display:block;margin-bottom:9px}
+  label.f span{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+  .modal{
+    position:fixed;inset:0;background:rgba(2,6,18,.72);z-index:50;
+    display:none;align-items:flex-end;justify-content:center;padding:0;
+  }
+  .modal.on{display:flex}
+  .sheet{
+    background:var(--card);width:100%;max-width:720px;max-height:88vh;overflow:auto;
+    border-radius:18px 18px 0 0;border:1px solid var(--line);padding:16px;
+  }
+  .sheet h3{margin:0 0 12px;font-size:16px;display:flex;justify-content:space-between;align-items:center}
+  .x{background:none;border:0;color:var(--muted);font-size:22px;cursor:pointer;line-height:1}
+  .toast{
+    position:fixed;bottom:22px;right:50%;transform:translateX(50%);
+    background:#0b1930;border:1px solid var(--accent);color:var(--txt);
+    padding:10px 18px;border-radius:999px;font-size:13.5px;z-index:80;
+    opacity:0;pointer-events:none;transition:.2s;white-space:nowrap;max-width:92vw;
+  }
+  .toast.on{opacity:1;bottom:32px}
+  .empty{color:var(--muted);font-size:13px;text-align:center;padding:18px 0}
+  .sub{font-size:12px;color:var(--muted)}
+  .stat{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .stat div{flex:1;min-width:90px;background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:9px;text-align:center}
+  .stat b{display:block;font-size:19px}
+  .stat span{font-size:11px;color:var(--muted)}
+  .warnbox{background:#3a1620;border:1px solid #5c2431;border-radius:12px;padding:12px;font-size:12.5px;color:#ffd0d6}
+  hr.sep{border:0;border-top:1px solid var(--line);margin:14px 0}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <h1>🏠 مراقبت از خانه</h1>
+    <div class="who" id="whoNow">—</div>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button class="tab on" data-tab="checkin">ورود</button>
+    <button class="tab" data-tab="tasks">کارها</button>
+    <button class="tab" data-tab="scores">امتیازها</button>
+    <button class="tab" data-tab="history">تاریخچه</button>
+    <button class="tab" data-tab="settings">تنظیمات</button>
+  </nav>
+</header>
+
+<div class="wrap">
+
+  <!-- ============ CHECK-IN ============ -->
+  <section id="tab-checkin" class="on">
+    <div class="card">
+      <h2>۱) اسمت را انتخاب کن</h2>
+      <p class="hint">بعد از انتخاب، دکمه «چک‌این» را بزن تا ساعت و تاریخ ورودت ثبت شود.</p>
+      <div class="people" id="peopleGrid"></div>
+      <div style="height:12px"></div>
+      <button class="btn primary block" id="btnCheckin">✅ چک‌این (ثبت ورود)</button>
+      <p class="hint" id="checkinState" style="margin-top:10px"></p>
+    </div>
+
+    <div class="card">
+      <h2>ورودهای امروز</h2>
+      <ul class="logs" id="todayCheckins"></ul>
+    </div>
+  </section>
+
+  <!-- ============ TASKS ============ -->
+  <section id="tab-tasks">
+    <div class="gate" id="gateBox">
+      <b id="gateTitle">💧 اول این را انجام بده</b>
+      <p id="gateText">وقتی وارد می‌شوید آب را به <b>home</b> تغییر دهید. تا وقتی این را تأیید نکنید، ثبت بقیهٔ کارهای مثبت فعال نمی‌شود.</p>
+      <button class="btn primary" id="btnGate">انجام شد — آب روی home است</button>
+    </div>
+
+    <div class="card">
+      <h2>➕ کارهای خانه <span class="sub">(اختیاری • امتیاز مثبت)</span></h2>
+      <p class="hint">هر کاری که انجام دادی را بزن. دوباره زدن، ثبتِ امروزت را برمی‌دارد.</p>
+      <ul class="tasks" id="posList"></ul>
+    </div>
+
+    <div class="card">
+      <h2>➖ قبل از رفتن <span class="sub">(اجباری • انجام‌نشده = امتیاز منفی)</span></h2>
+      <p class="hint">این کارها امتیاز مثبت ندارند. اگر کسی انجامشان نداده، هر کسی می‌تواند برایش امتیاز منفی ثبت کند: اول شخص خاطی را انتخاب کن، بعد روی کار بزن.</p>
+      <label class="f">
+        <span>امتیاز منفی برای چه کسی؟</span>
+        <select id="negPerson"></select>
+      </label>
+      <ul class="tasks" id="negList"></ul>
+    </div>
+  </section>
+
+  <!-- ============ SCORES ============ -->
+  <section id="tab-scores">
+    <div class="card">
+      <h2>📊 جدول امتیازها</h2>
+      <label class="f">
+        <span>بازهٔ زمانی</span>
+        <select id="scoreRange">
+          <option value="all">همهٔ زمان‌ها</option>
+          <option value="30">۳۰ روز اخیر</option>
+          <option value="7">۷ روز اخیر</option>
+          <option value="today">فقط امروز</option>
+        </select>
+      </label>
+      <table>
+        <thead><tr><th>نام</th><th>مثبت</th><th>منفی</th><th>ورودها</th></tr></thead>
+        <tbody id="scoreBody"></tbody>
+      </table>
+      <p class="hint" style="margin-top:10px">امتیازها جداگانه شمرده می‌شوند (جمع/تفریق نمی‌شوند). روی نام هر کس بزن تا تاریخچه‌اش را ببینی.</p>
+    </div>
+  </section>
+
+  <!-- ============ HISTORY ============ -->
+  <section id="tab-history">
+    <div class="card">
+      <h2>🗂 تاریخچه</h2>
+      <div class="row" style="margin-bottom:10px">
+        <label class="f" style="flex:1;min-width:140px;margin:0">
+          <span>شخص</span>
+          <select id="hPerson"><option value="">همه</option></select>
+        </label>
+        <label class="f" style="flex:1;min-width:140px;margin:0">
+          <span>نوع</span>
+          <select id="hType">
+            <option value="">همه</option>
+            <option value="checkin">ورود</option>
+            <option value="pos">مثبت</option>
+            <option value="neg">منفی</option>
+          </select>
+        </label>
+      </div>
+      <ul class="logs" id="historyList"></ul>
+    </div>
+  </section>
+
+  <!-- ============ SETTINGS ============ -->
+  <section id="tab-settings">
+    <div class="card">
+      <h2>👥 افراد</h2>
+      <ul class="logs" id="peopleAdmin"></ul>
+      <div class="row" style="margin-top:10px">
+        <input type="text" id="newPerson" placeholder="نام جدید…" style="flex:1;min-width:150px">
+        <button class="btn" id="btnAddPerson">افزودن</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>✏️ ویرایش کارها</h2>
+      <p class="hint">می‌توانی متن کارها را کوتاه‌تر کنی یا کد بدهی تا لیست شلوغ نشود. کد همان چیزی است که در تاریخچه دیده می‌شود.</p>
+      <b class="sub">کارهای مثبت</b>
+      <ul class="logs" id="posAdmin"></ul>
+      <button class="btn sm" id="btnAddPos" style="margin-top:8px">+ کار مثبت جدید</button>
+      <hr class="sep">
+      <b class="sub">کارهای «قبل از رفتن» (منفی)</b>
+      <ul class="logs" id="negAdmin"></ul>
+      <button class="btn sm" id="btnAddNeg" style="margin-top:8px">+ کار منفی جدید</button>
+    </div>
+
+    <div class="card">
+      <h2>💾 پشتیبان و پاک‌سازی</h2>
+      <div class="row">
+        <button class="btn" id="btnExport">⬇️ دانلود فایل پشتیبان</button>
+        <button class="btn" id="btnImport">⬆️ بازیابی از فایل</button>
+        <input type="file" id="fileImport" accept="application/json" hidden>
+      </div>
+      <hr class="sep">
+      <div class="warnbox">
+        با «پاک کردن حافظه»، همهٔ ثبت‌ها حذف می‌شوند. پیش از حذف، فایل پشتیبان به‌صورت خودکار دانلود می‌شود.
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn danger" id="btnResetLogs">🧹 پاک کردن ثبت‌ها (کارها و افراد بمانند)</button>
+        <button class="btn danger" id="btnResetAll">🔥 ریست کامل به حالت اولیه</button>
+      </div>
+      <p class="hint" id="storeInfo" style="margin-top:10px"></p>
+    </div>
+  </section>
+
+</div>
+
+<!-- ============ MODAL ============ -->
+<div class="modal" id="modal">
+  <div class="sheet">
+    <h3><span id="mTitle">—</span><button class="x" id="mClose">×</button></h3>
+    <div id="mBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+/* ---------------- constants / defaults ---------------- */
+
+const KEY = 'houseTracker.v1';
+const GATE_ID = 'HOME';
+
+const DEFAULT_POS = [
+  {id:GATE_ID, code:'HOME', title:'آب را روی home بگذار', desc:'وقتی وارد می‌شوید آب را از موبایل به home تغییر دهید. (قبل از ثبت هر کار دیگری الزامی است)', gate:true},
+  {id:'P1', code:'P1', title:'آب دادن به گل‌ها', desc:'آشپزخانه، اتاق کار، اتاق مهمان، زیرزمین دفتر و اتاق بازی'},
+  {id:'P2', code:'P2', title:'چک اتاق‌ها و زیرزمین', desc:'برای حشرات و موش'},
+  {id:'P3', code:'P3', title:'چک نشتی فاضلاب', desc:'زیرزمینِ زیر حمام (جلوی درب زیرزمین) برای نشت لولهٔ فاضلاب'},
+  {id:'P4', code:'P4', title:'چک روغن مخزن سوخت', desc:'نباید کمتر از ۳/۸ شود'},
+  {id:'P5', code:'P5', title:'بیرون گذاشتن آشغال', desc:'اگر پر بود بیرون گذاشته شود'},
+  {id:'P6', code:'P6', title:'نگاه به حیاط پشت و جلو', desc:'چیز غیرعادی نباشد'},
+  {id:'P7', code:'P7', title:'باز کردن پارکینگ و روشن کردن ماشین', desc:'هر از گاهی درب پارکینگ باز شود و ماشین روشن شود'},
+  {id:'P8', code:'P8', title:'چک ناودان‌ها', desc:'مخصوصاً موقع بارون؛ ناودان‌ها باز باشند و جایی چکه نکند'},
+  {id:'P9', code:'P9', title:'تکاندن یخ لبهٔ پشت‌بام', desc:'بعد از برف'}
+];
+
+const DEFAULT_NEG = [
+  {id:'N1', code:'N1', title:'خاموش کردن اجاق گاز و فر', desc:''},
+  {id:'N2', code:'N2', title:'بستن درب‌های پارکینگ و زیرزمین', desc:'درب پارکینگ، زیرزمین به پارکینگ، زیرزمین به حیاط بسته؛ چراغ پارکینگ خاموش'},
+  {id:'N3', code:'N3', title:'وصل کردن دوبارهٔ دوربین‌ها', desc:''},
+  {id:'N4', code:'N4', title:'روشن بودن چراغ‌ها', desc:'چراغ کنار خیابان و یکی از چراغ‌های کم‌نور داخل روشن باشد'},
+  {id:'N5', code:'N5', title:'آب روی away و ترموستات ۵۵F', desc:'از طریق موبایل آب روی away و ترموستات روی 55F تنظیم شود'},
+  {id:'N6', code:'N6', title:'بستن شیرهای آب', desc:'مخصوصاً شیرهای بیرون'},
+  {id:'N7', code:'N7', title:'قفل کردن درب اصلی', desc:''}
+];
+
+const DEFAULT_PEOPLE = ['علی','فاطیما','محمد'];
+
+function blank(){
+  return {
+    people: DEFAULT_PEOPLE.slice(),
+    pos: JSON.parse(JSON.stringify(DEFAULT_POS)),
+    neg: JSON.parse(JSON.stringify(DEFAULT_NEG)),
+    logs: [],
+    ui: {person: DEFAULT_PEOPLE[0], tab:'checkin'}
+  };
+}
+
+/* ---------------- state ---------------- */
+
+let S = load();
+
+function load(){
+  try{
+    const raw = localStorage.getItem(KEY);
+    if(!raw) return blank();
+    const d = JSON.parse(raw);
+    const b = blank();
+    return {
+      people: Array.isArray(d.people) && d.people.length ? d.people : b.people,
+      pos: Array.isArray(d.pos) && d.pos.length ? d.pos : b.pos,
+      neg: Array.isArray(d.neg) && d.neg.length ? d.neg : b.neg,
+      logs: Array.isArray(d.logs) ? d.logs : [],
+      ui: Object.assign(b.ui, d.ui || {})
+    };
+  }catch(e){
+    console.warn('bad storage', e);
+    return blank();
+  }
+}
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify(S)); }
+  catch(e){ toast('ذخیره نشد: حافظه پر است'); }
+}
+
+/* ---------------- date helpers (Gregorian / میلادی) ---------------- */
+
+const WD = ['یکشنبه','دوشنبه','سه‌شنبه','چهارشنبه','پنجشنبه','جمعه','شنبه'];
+
+function p2(n){ return String(n).padStart(2,'0'); }
+function dayKey(ts){ const d = new Date(ts); return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate()); }
+function timeStr(ts){ const d = new Date(ts); return p2(d.getHours())+':'+p2(d.getMinutes()); }
+function stamp(ts){ return dayKey(ts)+' • '+timeStr(ts); }
+function stampLong(ts){ const d = new Date(ts); return WD[d.getDay()]+' — '+dayKey(ts)+' • '+timeStr(ts); }
+function todayKey(){ return dayKey(Date.now()); }
+function toLocalInput(ts){ const d = new Date(ts); return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())+'T'+p2(d.getHours())+':'+p2(d.getMinutes()); }
+function fromLocalInput(v){ const t = new Date(v).getTime(); return isNaN(t) ? Date.now() : t; }
+
+/* ---------------- misc helpers ---------------- */
+
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function task(type,id){ return (type==='neg'?S.neg:S.pos).find(t => t.id===id) || null; }
+
+let toastT;
+function toast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('on');
+  clearTimeout(toastT); toastT = setTimeout(()=>el.classList.remove('on'), 2200);
+}
+
+/* ---------------- log operations ---------------- */
+
+function addLog(o){
+  const log = Object.assign({id:uid(), ts:Date.now(), note:''}, o);
+  S.logs.push(log); save(); return log;
+}
+function logsOf(person){ return S.logs.filter(l => l.person===person); }
+function hasToday(person, type, taskId){
+  const t = todayKey();
+  return S.logs.find(l => l.person===person && l.type===type && l.taskId===taskId && dayKey(l.ts)===t) || null;
+}
+function lastCheckin(person){
+  const c = S.logs.filter(l => l.type==='checkin' && l.person===person).sort((a,b)=>b.ts-a.ts);
+  return c[0] || null;
+}
+/* gate = checked in today AND confirmed HOME today (after that check-in) */
+function gateState(person){
+  const ci = lastCheckin(person);
+  const checkedIn = !!(ci && dayKey(ci.ts)===todayKey());
+  const home = S.logs.filter(l => l.person===person && l.type==='pos' && l.taskId===GATE_ID && dayKey(l.ts)===todayKey())
+                     .sort((a,b)=>b.ts-a.ts)[0] || null;
+  const ok = checkedIn && !!home && home.ts >= ci.ts;
+  return {checkedIn, home, ok, ci};
+}
+
+/* ---------------- rendering ---------------- */
+
+function render(){
+  renderHeader();
+  renderCheckin();
+  renderTasks();
+  renderScores();
+  renderHistory();
+  renderSettings();
+}
+
+function renderHeader(){
+  const g = gateState(S.ui.person);
+  document.getElementById('whoNow').innerHTML =
+    esc(S.ui.person) + (g.checkedIn ? ' • وارد شده ✅' : ' • چک‌این نشده');
+}
+
+/* --- check-in tab --- */
+function renderCheckin(){
+  const grid = document.getElementById('peopleGrid');
+  grid.innerHTML = S.people.map(p =>
+    `<div class="person ${p===S.ui.person?'on':''}" data-p="${esc(p)}">${esc(p)}</div>`).join('');
+  grid.querySelectorAll('.person').forEach(el => el.onclick = () => {
+    S.ui.person = el.dataset.p; save(); render();
+  });
+
+  const g = gateState(S.ui.person);
+  document.getElementById('checkinState').innerHTML = g.checkedIn
+    ? `آخرین ورود <b>${esc(S.ui.person)}</b>: ${stampLong(g.ci.ts)}`
+    : `<b>${esc(S.ui.person)}</b> امروز چک‌این نکرده است.`;
+
+  const today = S.logs.filter(l => l.type==='checkin' && dayKey(l.ts)===todayKey()).sort((a,b)=>b.ts-a.ts);
+  const ul = document.getElementById('todayCheckins');
+  ul.innerHTML = today.length ? today.map(l => logRow(l)).join('')
+    : '<li><div class="empty">امروز هنوز کسی وارد نشده.</div></li>';
+  bindLogRows(ul);
+}
+
+/* --- tasks tab --- */
+function renderTasks(){
+  const person = S.ui.person;
+  const g = gateState(person);
+
+  const box = document.getElementById('gateBox');
+  const btn = document.getElementById('btnGate');
+  box.classList.toggle('done', g.ok);
+  document.getElementById('gateTitle').textContent = g.ok ? '✅ آب روی home تنظیم شد' : '💧 اول این را انجام بده';
+  document.getElementById('gateText').innerHTML = g.ok
+    ? `<b>${esc(person)}</b> در ${stamp(g.home.ts)} تأیید کرد. حالا می‌توانی بقیهٔ کارها را ثبت کنی.`
+    : (g.checkedIn
+        ? 'وقتی وارد می‌شوید آب را به <b>home</b> تغییر دهید. تا این را تأیید نکنید، ثبت بقیهٔ کارهای مثبت فعال نمی‌شود.'
+        : 'اول در تبِ «ورود» چک‌این کن، بعد آب را روی <b>home</b> بگذار.');
+  btn.textContent = g.ok ? 'لغو تأیید' : (g.checkedIn ? 'انجام شد — آب روی home است' : 'اول چک‌این کن');
+  btn.className = 'btn ' + (g.ok ? 'ghost' : 'primary');
+  btn.disabled = !g.checkedIn && !g.ok;
+
+  /* positive tasks (gate item is rendered in the banner, not the list) */
+  const pl = document.getElementById('posList');
+  pl.innerHTML = S.pos.filter(t => t.id!==GATE_ID).map(t => {
+    const done = !!hasToday(person,'pos',t.id);
+    return taskRow(t, done, !g.ok, 'pos');
+  }).join('');
+  bindTaskRows(pl, 'pos');
+
+  /* negative */
+  const sel = document.getElementById('negPerson');
+  const cur = sel.value && S.people.includes(sel.value) ? sel.value : person;
+  sel.innerHTML = S.people.map(p => `<option ${p===cur?'selected':''}>${esc(p)}</option>`).join('');
+
+  const nl = document.getElementById('negList');
+  nl.innerHTML = S.neg.map(t => {
+    const done = !!hasToday(sel.value || cur,'neg',t.id);
+    return taskRow(t, done, false, 'neg');
+  }).join('');
+  bindTaskRows(nl, 'neg');
+}
+
+function taskRow(t, done, locked, type){
+  const cls = type==='neg' ? 'code n' : 'code';
+  const mark = type==='neg' ? '−' : '✓';
+  return `<li>
+    <span class="${cls}">${esc(t.code||t.id)}</span>
+    <div class="tinfo" data-info>
+      <div class="t">${esc(t.title)}${t.desc?' <span class="more" data-more>ⓘ</span>':''}</div>
+      ${t.desc?`<div class="d">${esc(t.desc)}</div>`:''}
+    </div>
+    <div class="act">
+      <button class="chk ${done?'on':''} ${type==='neg'?'neg':''}" data-id="${esc(t.id)}" ${locked?'disabled':''}>${mark}</button>
+    </div>
+  </li>`;
+}
+
+function bindTaskRows(root, type){
+  root.querySelectorAll('[data-more]').forEach(el => el.onclick = e => {
+    e.stopPropagation();
+    el.closest('.tinfo').classList.toggle('open');
+  });
+  root.querySelectorAll('.chk').forEach(el => el.onclick = () => {
+    const id = el.dataset.id;
+    const t = task(type, id);
+    const person = type==='neg' ? document.getElementById('negPerson').value : S.ui.person;
+    const ex = hasToday(person, type, id);
+    if(ex){
+      if(!confirm(`ثبت امروزِ «${t.title}» برای ${person} حذف شود؟`)) return;
+      S.logs = S.logs.filter(l => l.id!==ex.id); save();
+      toast('ثبت حذف شد');
+    }else{
+      if(type==='pos' && !gateState(person).ok){ toast('اول آب را روی home بگذار'); return; }
+      addLog({type, person, taskId:id, code:t.code||t.id, title:t.title, by:S.ui.person});
+      toast(type==='pos' ? `+۱ برای ${person}` : `−۱ برای ${person}`);
+    }
+    render();
+  });
+}
+
+/* --- scores tab --- */
+function rangeFilter(){
+  const v = document.getElementById('scoreRange').value;
+  if(v==='all') return () => true;
+  if(v==='today'){ const t = todayKey(); return l => dayKey(l.ts)===t; }
+  const days = parseInt(v,10);
+  const from = Date.now() - days*86400000;
+  return l => l.ts >= from;
+}
+function renderScores(){
+  const f = rangeFilter();
+  const rows = S.people.map(p => {
+    const ls = S.logs.filter(l => l.person===p && f(l));
+    return {
+      p,
+      pos: ls.filter(l => l.type==='pos').length,
+      neg: ls.filter(l => l.type==='neg').length,
+      ci : ls.filter(l => l.type==='checkin').length
+    };
+  });
+  document.getElementById('scoreBody').innerHTML = rows.map(r => `
+    <tr>
+      <td class="name" data-p="${esc(r.p)}">${esc(r.p)}</td>
+      <td><span class="pill p">+${r.pos}</span></td>
+      <td><span class="pill n">−${r.neg}</span></td>
+      <td class="sub">${r.ci}</td>
+    </tr>`).join('');
+  document.querySelectorAll('#scoreBody .name').forEach(el =>
+    el.onclick = () => personSheet(el.dataset.p));
+}
+
+/* --- history tab --- */
+function renderHistory(){
+  const hp = document.getElementById('hPerson');
+  const keep = hp.value;
+  hp.innerHTML = '<option value="">همه</option>' + S.people.map(p =>
+    `<option ${p===keep?'selected':''}>${esc(p)}</option>`).join('');
+
+  const type = document.getElementById('hType').value;
+  let ls = S.logs.slice().sort((a,b)=>b.ts-a.ts);
+  if(keep) ls = ls.filter(l => l.person===keep);
+  if(type) ls = ls.filter(l => l.type===type);
+
+  const ul = document.getElementById('historyList');
+  ul.innerHTML = ls.length ? ls.map(l => logRow(l, true)).join('')
+    : '<li><div class="empty">چیزی ثبت نشده.</div></li>';
+  bindLogRows(ul);
+}
+
+function logRow(l, showPerson){
+  const dot = l.type==='pos' ? 'p' : l.type==='neg' ? 'n' : 'c';
+  const label = l.type==='checkin' ? 'ورود به خانه'
+    : `<span class="code ${l.type==='neg'?'n':''}" style="display:inline-block;min-width:0;padding:1px 5px">${esc(l.code||'')}</span> ${esc(l.title||'')}`;
+  const sign = l.type==='pos' ? '<span class="pill p">+۱</span>' : l.type==='neg' ? '<span class="pill n">−۱</span>' : '';
+  return `<li>
+    <span class="dot ${dot}"></span>
+    <div class="lmain">
+      <div class="l1">${showPerson!==false?`<b>${esc(l.person)}</b> — `:`<b>${esc(l.person)}</b> — `}${label} ${sign}</div>
+      <div class="l2">${stampLong(l.ts)}${l.note?' • '+esc(l.note):''}</div>
+    </div>
+    <div class="lact">
+      <button class="btn sm ghost" data-edit="${l.id}">ویرایش</button>
+      <button class="btn sm danger" data-del="${l.id}">حذف</button>
+    </div>
+  </li>`;
+}
+
+function bindLogRows(root){
+  root.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editLog(b.dataset.edit));
+  root.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+    const l = S.logs.find(x => x.id===b.dataset.del);
+    if(!l) return;
+    if(!confirm('این ثبت حذف شود؟')) return;
+    S.logs = S.logs.filter(x => x.id!==l.id); save(); render(); toast('حذف شد');
+  });
+}
+
+/* --- settings tab --- */
+function renderSettings(){
+  const pa = document.getElementById('peopleAdmin');
+  pa.innerHTML = S.people.map(p => `
+    <li><div class="lmain"><div class="l1"><b>${esc(p)}</b></div>
+      <div class="l2">${S.logs.filter(l=>l.person===p).length} ثبت</div></div>
+      <div class="lact">
+        <button class="btn sm ghost" data-ren="${esc(p)}">تغییر نام</button>
+        <button class="btn sm danger" data-rmp="${esc(p)}">حذف</button>
+      </div></li>`).join('');
+  pa.querySelectorAll('[data-ren]').forEach(b => b.onclick = () => {
+    const old = b.dataset.ren;
+    const nn = prompt('نام جدید:', old);
+    if(!nn || !nn.trim() || nn===old) return;
+    const name = nn.trim();
+    S.people = S.people.map(x => x===old ? name : x);
+    S.logs.forEach(l => { if(l.person===old) l.person=name; if(l.by===old) l.by=name; });
+    if(S.ui.person===old) S.ui.person = name;
+    save(); render(); toast('نام تغییر کرد');
+  });
+  pa.querySelectorAll('[data-rmp]').forEach(b => b.onclick = () => {
+    const p = b.dataset.rmp;
+    if(S.people.length<=1){ toast('حداقل یک نفر باید بماند'); return; }
+    if(!confirm(`${p} حذف شود؟ ثبت‌هایش باقی می‌مانند.`)) return;
+    S.people = S.people.filter(x => x!==p);
+    if(S.ui.person===p) S.ui.person = S.people[0];
+    save(); render();
+  });
+
+  document.getElementById('posAdmin').innerHTML = S.pos.map(t => taskAdminRow(t,'pos')).join('');
+  document.getElementById('negAdmin').innerHTML = S.neg.map(t => taskAdminRow(t,'neg')).join('');
+  bindTaskAdmin('posAdmin','pos');
+  bindTaskAdmin('negAdmin','neg');
+
+  const bytes = (localStorage.getItem(KEY)||'').length;
+  document.getElementById('storeInfo').textContent =
+    `${S.logs.length} ثبت • ${(bytes/1024).toFixed(1)} کیلوبایت در حافظهٔ همین مرورگر ذخیره شده است.`;
+}
+
+function taskAdminRow(t, type){
+  return `<li>
+    <span class="code ${type==='neg'?'n':''}">${esc(t.code||t.id)}</span>
+    <div class="lmain"><div class="l1">${esc(t.title)}${t.gate?' <span class="sub">(الزامی/گیت)</span>':''}</div>
+      ${t.desc?`<div class="l2" style="direction:rtl;font-family:inherit">${esc(t.desc)}</div>`:''}</div>
+    <div class="lact">
+      <button class="btn sm ghost" data-et="${esc(t.id)}">ویرایش</button>
+      ${t.gate?'':`<button class="btn sm danger" data-dt="${esc(t.id)}">حذف</button>`}
+    </div>
+  </li>`;
+}
+function bindTaskAdmin(rootId, type){
+  const root = document.getElementById(rootId);
+  root.querySelectorAll('[data-et]').forEach(b => b.onclick = () => editTask(type, b.dataset.et));
+  root.querySelectorAll('[data-dt]').forEach(b => b.onclick = () => {
+    const id = b.dataset.dt;
+    if(!confirm('این کار حذف شود؟ ثبت‌های قبلی در تاریخچه می‌مانند.')) return;
+    if(type==='neg') S.neg = S.neg.filter(t => t.id!==id);
+    else S.pos = S.pos.filter(t => t.id!==id);
+    save(); render(); toast('حذف شد');
+  });
+}
+
+/* ---------------- modal ---------------- */
+
+function openModal(title, html){
+  document.getElementById('mTitle').textContent = title;
+  document.getElementById('mBody').innerHTML = html;
+  document.getElementById('modal').classList.add('on');
+}
+function closeModal(){ document.getElementById('modal').classList.remove('on'); }
+document.getElementById('mClose').onclick = closeModal;
+document.getElementById('modal').onclick = e => { if(e.target.id==='modal') closeModal(); };
+
+/* person history sheet */
+function personSheet(p){
+  const ls = logsOf(p).sort((a,b)=>b.ts-a.ts);
+  const pos = ls.filter(l=>l.type==='pos').length;
+  const neg = ls.filter(l=>l.type==='neg').length;
+  const ci  = ls.filter(l=>l.type==='checkin').length;
+  const html = `
+    <div class="stat">
+      <div><b style="color:var(--pos)">+${pos}</b><span>مثبت</span></div>
+      <div><b style="color:var(--neg)">−${neg}</b><span>منفی</span></div>
+      <div><b>${ci}</b><span>ورود</span></div>
+    </div>
+    <ul class="logs" id="sheetLogs">
+      ${ls.length ? ls.map(l => logRow(l,false)).join('') : '<li><div class="empty">ثبتی وجود ندارد.</div></li>'}
+    </ul>`;
+  openModal('تاریخچهٔ ' + p, html);
+  bindLogRows(document.getElementById('sheetLogs'));
+}
+
+/* edit a log */
+function editLog(id){
+  const l = S.logs.find(x => x.id===id);
+  if(!l) return;
+  const opts = l.type==='checkin' ? '' :
+    (l.type==='neg'?S.neg:S.pos).map(t =>
+      `<option value="${esc(t.id)}" ${t.id===l.taskId?'selected':''}>${esc(t.code||t.id)} — ${esc(t.title)}</option>`).join('');
+  openModal('ویرایش ثبت', `
+    <label class="f"><span>شخص</span>
+      <select id="eP">${S.people.map(p=>`<option ${p===l.person?'selected':''}>${esc(p)}</option>`).join('')}</select></label>
+    <label class="f"><span>نوع</span>
+      <select id="eT">
+        <option value="checkin" ${l.type==='checkin'?'selected':''}>ورود</option>
+        <option value="pos" ${l.type==='pos'?'selected':''}>کار مثبت (+۱)</option>
+        <option value="neg" ${l.type==='neg'?'selected':''}>امتیاز منفی (−۱)</option>
+      </select></label>
+    ${l.type==='checkin'?'':`<label class="f"><span>کار</span><select id="eK">${opts}</select></label>`}
+    <label class="f"><span>تاریخ و ساعت (میلادی)</span>
+      <input type="datetime-local" id="eD" value="${toLocalInput(l.ts)}"></label>
+    <label class="f"><span>توضیح (اختیاری)</span>
+      <input type="text" id="eN" value="${esc(l.note||'')}"></label>
+    <div class="row"><button class="btn primary" id="eSave">ذخیره</button>
+      <button class="btn ghost" id="eCancel">انصراف</button></div>
+  `);
+  document.getElementById('eCancel').onclick = closeModal;
+  document.getElementById('eSave').onclick = () => {
+    const type = document.getElementById('eT').value;
+    l.person = document.getElementById('eP').value;
+    l.ts = fromLocalInput(document.getElementById('eD').value);
+    l.note = document.getElementById('eN').value.trim();
+    if(type==='checkin'){ l.type='checkin'; delete l.taskId; delete l.code; delete l.title; }
+    else{
+      const kEl = document.getElementById('eK');
+      let tid = kEl ? kEl.value : l.taskId;
+      let t = task(type, tid);
+      if(!t) t = (type==='neg'?S.neg:S.pos)[0];
+      l.type=type; l.taskId=t.id; l.code=t.code||t.id; l.title=t.title;
+    }
+    save(); closeModal(); render(); toast('ذخیره شد');
+  };
+}
+
+/* edit / add a task definition */
+function editTask(type, id){
+  const list = type==='neg' ? S.neg : S.pos;
+  const isNew = !id;
+  const t = isNew ? {id:uid(), code:'', title:'', desc:''} : list.find(x => x.id===id);
+  if(!t) return;
+  openModal(isNew ? 'کار جدید' : 'ویرایش کار', `
+    <label class="f"><span>کد کوتاه (مثلاً P5)</span>
+      <input type="text" id="tC" value="${esc(t.code||'')}"></label>
+    <label class="f"><span>عنوان کوتاه</span>
+      <input type="text" id="tT" value="${esc(t.title||'')}"></label>
+    <label class="f"><span>توضیح کامل (اختیاری)</span>
+      <textarea id="tD" rows="3">${esc(t.desc||'')}</textarea></label>
+    <div class="row"><button class="btn primary" id="tSave">ذخیره</button>
+      <button class="btn ghost" id="tCancel">انصراف</button></div>
+  `);
+  document.getElementById('tCancel').onclick = closeModal;
+  document.getElementById('tSave').onclick = () => {
+    const title = document.getElementById('tT').value.trim();
+    if(!title){ toast('عنوان لازم است'); return; }
+    t.title = title;
+    t.code = document.getElementById('tC').value.trim() || t.id.slice(0,4).toUpperCase();
+    t.desc = document.getElementById('tD').value.trim();
+    if(isNew) list.push(t);
+    /* keep old logs' labels in sync where they reference this task */
+    S.logs.forEach(l => { if(l.taskId===t.id){ l.code=t.code; l.title=t.title; } });
+    save(); closeModal(); render(); toast('ذخیره شد');
+  };
+}
+
+/* ---------------- backup / reset ---------------- */
+
+function backupName(){
+  const d = new Date();
+  return `house-tracker-backup-${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}.json`;
+}
+function downloadBackup(){
+  const payload = JSON.stringify({app:'house-tracker', version:1, exportedAt:new Date().toISOString(), data:S}, null, 2);
+  const blob = new Blob([payload], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = backupName();
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+  return true;
+}
+
+document.getElementById('btnExport').onclick = () => { downloadBackup(); toast('فایل پشتیبان دانلود شد'); };
+
+document.getElementById('btnImport').onclick = () => document.getElementById('fileImport').click();
+document.getElementById('fileImport').onchange = e => {
+  const f = e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try{
+      const j = JSON.parse(r.result);
+      const d = j.data || j;
+      if(!d || !Array.isArray(d.logs)) throw new Error('ساختار نامعتبر');
+      if(!confirm('اطلاعات فعلی با فایل پشتیبان جایگزین شود؟')) return;
+      localStorage.setItem(KEY, JSON.stringify(d));
+      S = load(); render(); toast('بازیابی شد');
+    }catch(err){ alert('فایل معتبر نیست: ' + err.message); }
+    finally{ e.target.value = ''; }
+  };
+  r.readAsText(f);
+};
+
+function resetFlow(fullReset){
+  const msg = fullReset
+    ? 'ریست کامل: همهٔ ثبت‌ها، افراد و کارها به حالت اولیه برمی‌گردند.\nابتدا فایل پشتیبان دانلود می‌شود. ادامه؟'
+    : 'همهٔ ثبت‌ها (ورودها و امتیازها) پاک می‌شوند.\nابتدا فایل پشتیبان دانلود می‌شود. ادامه؟';
+  if(!confirm(msg)) return;
+  downloadBackup();                      /* backup ALWAYS downloads before wiping */
+  setTimeout(() => {
+    if(fullReset){ S = blank(); }
+    else { S.logs = []; }
+    save(); render();
+    toast(fullReset ? 'ریست کامل انجام شد' : 'ثبت‌ها پاک شدند');
+  }, 600);
+}
+document.getElementById('btnResetLogs').onclick = () => resetFlow(false);
+document.getElementById('btnResetAll').onclick  = () => resetFlow(true);
+
+/* ---------------- events ---------------- */
+
+document.getElementById('tabs').onclick = e => {
+  const b = e.target.closest('.tab'); if(!b) return;
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x===b));
+  document.querySelectorAll('section').forEach(s =>
+    s.classList.toggle('on', s.id === 'tab-'+b.dataset.tab));
+  S.ui.tab = b.dataset.tab; save();
+};
+
+document.getElementById('btnCheckin').onclick = () => {
+  const p = S.ui.person;
+  const g = gateState(p);
+  if(g.checkedIn && !confirm(`${p} امروز در ${timeStr(g.ci.ts)} چک‌این کرده. ورود جدید ثبت شود؟`)) return;
+  addLog({type:'checkin', person:p});
+  render();
+  toast(`${p} وارد شد — ${stamp(Date.now())}`);
+  document.querySelector('.tab[data-tab="tasks"]').click();
+};
+
+document.getElementById('btnGate').onclick = () => {
+  const p = S.ui.person;
+  const g = gateState(p);
+  if(g.ok){
+    if(!confirm('تأیید «آب روی home» برداشته شود؟')) return;
+    S.logs = S.logs.filter(l => l.id !== g.home.id); save();
+    toast('تأیید برداشته شد');
+  }else{
+    if(!g.checkedIn){ toast('اول چک‌این کن'); document.querySelector('.tab[data-tab="checkin"]').click(); return; }
+    const t = S.pos.find(x => x.id===GATE_ID) || {code:'HOME', title:'آب را روی home بگذار'};
+    addLog({type:'pos', person:p, taskId:GATE_ID, code:t.code||'HOME', title:t.title, by:p});
+    toast('ثبت شد — حالا بقیهٔ کارها فعال است');
+  }
+  render();
+};
+
+document.getElementById('negPerson').onchange = renderTasks;
+document.getElementById('scoreRange').onchange = renderScores;
+document.getElementById('hPerson').onchange = renderHistory;
+document.getElementById('hType').onchange = renderHistory;
+document.getElementById('btnAddPos').onclick = () => editTask('pos', null);
+document.getElementById('btnAddNeg').onclick = () => editTask('neg', null);
+document.getElementById('btnAddPerson').onclick = () => {
+  const el = document.getElementById('newPerson');
+  const n = el.value.trim();
+  if(!n) return;
+  if(S.people.includes(n)){ toast('این نام وجود دارد'); return; }
+  S.people.push(n); el.value=''; save(); render(); toast('اضافه شد');
+};
+
+/* ---------------- boot ---------------- */
+
+if(!S.people.includes(S.ui.person)) S.ui.person = S.people[0];
+const startTab = document.querySelector(`.tab[data-tab="${S.ui.tab||'checkin'}"]`);
+if(startTab) startTab.click();
+render();
+</script>
+</body>
+</html>
