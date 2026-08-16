@@ -285,6 +285,7 @@
       <div class="row">
         <button class="btn" id="btnExport">⬇️ دانلود فایل پشتیبان</button>
         <button class="btn" id="btnImport">⬆️ بازیابی از فایل</button>
+        <button class="btn ghost" id="btnShowText">📋 نمایش متن پشتیبان</button>
         <input type="file" id="fileImport" accept="application/json" hidden>
       </div>
       <hr class="sep">
@@ -794,18 +795,60 @@ function backupName(){
   const d = new Date();
   return `house-tracker-backup-${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}.json`;
 }
-function downloadBackup(){
-  const payload = JSON.stringify({app:'house-tracker', version:1, exportedAt:new Date().toISOString(), data:S}, null, 2);
-  const blob = new Blob([payload], {type:'application/json'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = backupName();
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url), 4000);
-  return true;
+function backupText(){
+  return JSON.stringify({app:'house-tracker', version:1, exportedAt:new Date().toISOString(), data:S}, null, 2);
 }
 
-document.getElementById('btnExport').onclick = () => { downloadBackup(); toast('فایل پشتیبان دانلود شد'); };
+/* Saving a file works differently depending on where the page is opened:
+   a published/hosted page gets a save API, a plain page uses a blob link.
+   Whatever happens, the JSON text is also offered on screen so a backup
+   can never be lost silently. */
+async function saveBackupFile(){
+  const payload = backupText(), name = backupName();
+  try{
+    const api = (window.claude && typeof window.claude.use === 'function')
+      ? await window.claude.use('downloads') : null;
+    if(api){
+      await api.save({filename:name, data:payload});
+      return {ok:true};
+    }
+  }catch(err){
+    return {ok:false, reason: (err && err.code === 'declined') ? 'declined' : 'error'};
+  }
+  try{
+    const blob = new Blob([payload], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    return {ok:true};
+  }catch(err){
+    return {ok:false, reason:'error'};
+  }
+}
+
+function backupTextBox(){
+  return `<label class="f"><span>متن پشتیبان (اگر دانلود نشد، این را کپی و جایی ذخیره کن)</span>
+    <textarea id="bkText" rows="6" readonly>${esc(backupText())}</textarea></label>
+    <div class="row"><button class="btn sm" id="bkCopy">📋 کپی متن پشتیبان</button></div>`;
+}
+function bindBackupBox(){
+  const b = document.getElementById('bkCopy');
+  if(!b) return;
+  b.onclick = async () => {
+    const ta = document.getElementById('bkText');
+    try{ await navigator.clipboard.writeText(ta.value); toast('کپی شد'); }
+    catch(e){ ta.removeAttribute('readonly'); ta.select(); toast('متن را دستی کپی کن'); }
+  };
+}
+
+document.getElementById('btnExport').onclick = async () => {
+  const r = await saveBackupFile();
+  toast(r.ok ? 'فایل پشتیبان ذخیره شد' : 'ذخیره انجام نشد — متن پشتیبان را کپی کن');
+  if(!r.ok){ openModal('پشتیبان', backupTextBox()); bindBackupBox(); }
+};
+document.getElementById('btnShowText').onclick = () => { openModal('متن پشتیبان', backupTextBox()); bindBackupBox(); };
 
 document.getElementById('btnImport').onclick = () => document.getElementById('fileImport').click();
 document.getElementById('fileImport').onchange = e => {
@@ -825,18 +868,32 @@ document.getElementById('fileImport').onchange = e => {
   r.readAsText(f);
 };
 
-function resetFlow(fullReset){
-  const msg = fullReset
-    ? 'ریست کامل: همهٔ ثبت‌ها، افراد و کارها به حالت اولیه برمی‌گردند.\nابتدا فایل پشتیبان دانلود می‌شود. ادامه؟'
-    : 'همهٔ ثبت‌ها (ورودها و امتیازها) پاک می‌شوند.\nابتدا فایل پشتیبان دانلود می‌شود. ادامه؟';
-  if(!confirm(msg)) return;
-  downloadBackup();                      /* backup ALWAYS downloads before wiping */
-  setTimeout(() => {
-    if(fullReset){ S = blank(); }
-    else { S.logs = []; }
-    save(); render();
+async function resetFlow(fullReset){
+  const what = fullReset
+    ? 'ریست کامل: همهٔ ثبت‌ها، افراد و کارها به حالت اولیه برمی‌گردند.'
+    : 'همهٔ ثبت‌ها (ورودها و امتیازها) پاک می‌شوند.';
+  if(!confirm(what + '\nابتدا فایل پشتیبان ذخیره می‌شود. ادامه؟')) return;
+
+  const r = await saveBackupFile();      /* backup ALWAYS happens before wiping */
+  openModal('پشتیبان گرفته شد — تأیید پاک کردن', `
+    <p class="hint">${r.ok
+      ? 'فایل پشتیبان ذخیره شد ✅'
+      : (r.reason==='declined'
+          ? 'ذخیرهٔ فایل لغو شد ⚠️ — متن زیر را کپی کن وگرنه اطلاعات از بین می‌رود.'
+          : 'ذخیرهٔ فایل انجام نشد ⚠️ — متن زیر را کپی کن وگرنه اطلاعات از بین می‌رود.')}</p>
+    ${backupTextBox()}
+    <p class="hint">${esc(what)}</p>
+    <div class="row">
+      <button class="btn danger" id="rsGo">پاک کن</button>
+      <button class="btn primary" id="rsNo">انصراف</button>
+    </div>`);
+  bindBackupBox();
+  document.getElementById('rsNo').onclick = closeModal;
+  document.getElementById('rsGo').onclick = () => {
+    if(fullReset){ S = blank(); } else { S.logs = []; }
+    save(); closeModal(); render();
     toast(fullReset ? 'ریست کامل انجام شد' : 'ثبت‌ها پاک شدند');
-  }, 600);
+  };
 }
 document.getElementById('btnResetLogs').onclick = () => resetFlow(false);
 document.getElementById('btnResetAll').onclick  = () => resetFlow(true);
@@ -892,6 +949,10 @@ document.getElementById('btnAddPerson').onclick = () => {
 };
 
 /* ---------------- boot ---------------- */
+
+/* when the page is embedded by a host, the outer <html> is not ours */
+document.documentElement.setAttribute('dir','rtl');
+document.documentElement.setAttribute('lang','fa');
 
 if(!S.people.includes(S.ui.person)) S.ui.person = S.people[0];
 const startTab = document.querySelector(`.tab[data-tab="${S.ui.tab||'checkin'}"]`);
