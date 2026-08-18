@@ -227,6 +227,36 @@
   .warnbox{background:var(--bad-bg);border:1px solid #E5C0B3;border-radius:12px;padding:12px;font-size:12.5px;color:#8C3520;line-height:1.75}
   .okbox{background:var(--good-bg);border:1px solid #C6D9B2;border-radius:12px;padding:12px;font-size:12.5px;color:#3F5D2A;line-height:1.75}
   hr.sep{border:0;border-top:1px solid var(--line);margin:15px 0}
+
+  /* checkout checklist */
+  .pbar{height:9px;border-radius:999px;background:var(--sand2);overflow:hidden;margin:4px 0 9px}
+  .pbar-fill{height:100%;background:var(--good);border-radius:999px;transition:width .25s}
+  .costat{display:flex;justify-content:space-between;align-items:center;gap:9px;font-size:12.5px;margin-bottom:6px;flex-wrap:wrap}
+  ul.tasks li.pending{background:linear-gradient(90deg,rgba(176,68,44,.06),transparent)}
+  ul.tasks li.cleared .tinfo .t{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--line2)}
+  .costamp{border:1px solid #C6D9B2;background:var(--good-bg);border-radius:12px;padding:11px;margin-top:11px;font-size:12.5px;color:#3F5D2A}
+  .costamp.miss{border-color:#E5C0B3;background:var(--bad-bg);color:#8C3520}
+
+  /* per-person analytics */
+  .chartbox{margin:4px 0 2px}
+  .chartbox h3{font-size:14px;margin:0 0 3px;color:var(--brand-deep)}
+  .chartbox .cap{font-size:11.5px;color:var(--muted);margin:0 0 9px}
+  .bars{display:flex;flex-direction:column;gap:7px}
+  .barrow{display:grid;grid-template-columns:1fr 46px;align-items:center;gap:9px}
+  .barlab{font-size:12.5px;display:flex;align-items:center;gap:6px;min-width:0}
+  .barlab span.tx{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bartrack{grid-column:1 / -1;height:14px;background:var(--sand);border-radius:4px;overflow:hidden}
+  .barfill{height:100%;border-radius:0 4px 4px 0;transition:width .3s}
+  .barval{font-size:12px;color:var(--ink2);font-variant-numeric:tabular-nums;text-align:left;direction:ltr}
+  .legend{display:flex;gap:13px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin:2px 0 9px}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-inline-end:5px;vertical-align:-1px}
+  .sesstbl{min-width:580px}
+  .sesstbl td,.sesstbl th{padding:8px 5px;font-size:12.5px;white-space:nowrap}
+  .sesstbl td:last-child{max-width:200px;overflow:hidden;text-overflow:ellipsis}
+  .badge{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;border:1px solid var(--line);background:var(--sand)}
+  .badge.ok{background:var(--good-bg);border-color:#C6D9B2;color:#3F5D2A}
+  .badge.warn{background:var(--gold-bg);border-color:#E3C989;color:#7A5A12}
+  .badge.bad{background:var(--bad-bg);border-color:#E5C0B3;color:var(--bad)}
   .rule{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:11.5px;margin:14px 0 9px}
   .rule::before,.rule::after{content:"";flex:1;height:1px;background:var(--line)}
 </style>
@@ -284,21 +314,30 @@
     </div>
 
     <div class="card">
-      <h2>🔒 قبل از رفتن <span class="sub">اجباری • انجام‌نشده = امتیاز منفی</span></h2>
-      <p class="hint">این کارها امتیاز مثبت ندارند. اگر کسی انجامشان نداده، هر کسی می‌تواند برایش امتیاز منفی ثبت کند: اول شخص را انتخاب کن، بعد روی کار بزن.</p>
+      <h2>🚪 لیست چک‌اوت <span class="sub">قبل از رفتن • هر مورد پیش‌فرض یک امتیاز منفی است</span></h2>
+      <p class="hint">همهٔ موارد از اول منفی حساب می‌شوند. هر کدام را که انجام دادی بزن تا منفی‌اش برداشته شود؛ آخرش «ثبت چک‌اوت» را بزن. هرچه باقی بماند، امتیاز منفی ثبت می‌شود.</p>
       <label class="f">
-        <span>امتیاز منفی برای چه کسی؟</span>
+        <span>چه کسی دارد خارج می‌شود؟</span>
         <select id="negPerson"></select>
       </label>
+      <div class="costat">
+        <span id="coCount">—</span>
+        <span class="sub" id="coLeft"></span>
+      </div>
+      <div class="pbar"><div class="pbar-fill" id="coFill" style="width:0%"></div></div>
       <ul class="tasks" id="negList"></ul>
+      <button class="btn primary block" id="btnCheckout" style="margin-top:12px">🚪 ثبت چک‌اوت</button>
+      <div id="coStamp"></div>
     </div>
   </section>
 
   <!-- ============ SCORES ============ -->
   <section id="tab-scores">
     <div class="card">
-      <h2>🏆 جدول امتیازها</h2>
-      <label class="f">
+      <h2>👤 کارنامهٔ هر نفر</h2>
+      <p class="hint">امتیاز هر کس جداگانه و در صفحهٔ خودش دیده می‌شود — جدول رقابتی در کار نیست.</p>
+      <div class="people" id="scorePeople"></div>
+      <label class="f" style="margin:12px 0 0">
         <span>بازهٔ زمانی</span>
         <select id="scoreRange">
           <option value="all">همهٔ زمان‌ها</option>
@@ -307,14 +346,8 @@
           <option value="today">فقط امروز</option>
         </select>
       </label>
-      <div class="tblwrap">
-        <table>
-          <thead><tr><th>نام</th><th>مثبت</th><th>منفی</th><th>ورودها</th></tr></thead>
-          <tbody id="scoreBody"></tbody>
-        </table>
-      </div>
-      <p class="hint" style="margin:12px 0 0">امتیازها جداگانه شمرده می‌شوند (جمع و تفریق نمی‌شوند). روی نام هر کس بزن تا تاریخچه‌اش باز شود.</p>
     </div>
+    <div id="personPanel"></div>
   </section>
 
   <!-- ============ HISTORY ============ -->
@@ -346,7 +379,7 @@
   <section id="tab-settings">
     <div class="card">
       <h2>☁️ همگام‌سازی بین گوشی‌ها</h2>
-      <p class="hint">با وصل کردن به یک Google Sheet، هر سه نفر از گوشی خودشان روی یک لیست مشترک ثبت می‌کنند. راهنمای ساخت شیت در فایل <b>SETUP-SYNC.md</b> است.</p>
+      <p class="hint">با وصل کردن به یک Google Sheet، هر سه نفر از گوشی خودشان روی یک لیست مشترک ثبت می‌کنند. راهنمای کامل و گام‌به‌گام در فایل <b>SETUP.md</b> است.</p>
       <div class="warnbox" id="syncEmbedWarn" style="display:none;margin-bottom:11px">
         این نسخه داخل صفحهٔ claude.ai اجرا می‌شود و اجازهٔ اتصال به سرویس بیرونی را ندارد.
         برای همگام‌سازی، اپ را از لینک GitHub Pages باز کن.
@@ -530,7 +563,14 @@ function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function task(type,id){ return (type==='neg'?S.neg:S.pos).find(t => t.id===id) || null; }
 function avatar(p){ const i = S.people.indexOf(p); return AVATARS[(i<0?0:i) % AVATARS.length]; }
-function typeName(t){ return t==='checkin' ? 'ورود' : t==='pos' ? 'کار مثبت' : 'امتیاز منفی'; }
+function typeName(t){
+  return t==='checkin' ? 'ورود'
+       : t==='pos' ? 'کار مثبت'
+       : t==='neg' ? 'امتیاز منفی'
+       : t==='co_ok' ? 'مورد چک‌اوت (انجام شد)'
+       : t==='checkout' ? 'چک‌اوت'
+       : t || '—';
+}
 
 let toastT;
 function toast(msg){
@@ -584,7 +624,7 @@ function renderCheckin(){
     `<button class="person ${p===S.ui.person?'on':''}" data-p="${esc(p)}">
        <span class="av">${avatar(p)}</span>${esc(p)}</button>`).join('');
   grid.querySelectorAll('.person').forEach(el => el.onclick = () => {
-    S.ui.person = el.dataset.p; save(); render();
+    S.ui.person = el.dataset.p; S.ui.coPerson = null; S.ui.scorePerson = null; save(); render();
   });
 
   const g = gateState(S.ui.person);
@@ -619,71 +659,363 @@ function renderTasks(){
 
   const pl = document.getElementById('posList');
   pl.innerHTML = S.pos.filter(t => t.id!==GATE_ID)
-    .map(t => taskRow(t, !!hasToday(person,'pos',t.id), !g.ok, 'pos')).join('');
-  bindTaskRows(pl, 'pos');
+    .map(t => taskRow(t, !!hasToday(person,'pos',t.id), !g.ok)).join('');
+  bindTaskRows(pl);
 
-  const sel = document.getElementById('negPerson');
-  const cur = sel.value && S.people.includes(sel.value) ? sel.value : person;
-  sel.innerHTML = S.people.map(p => `<option ${p===cur?'selected':''}>${esc(p)}</option>`).join('');
-
-  const nl = document.getElementById('negList');
-  nl.innerHTML = S.neg.map(t => taskRow(t, !!hasToday(cur,'neg',t.id), false, 'neg')).join('');
-  bindTaskRows(nl, 'neg');
+  renderCheckout();
 }
 
-function taskRow(t, done, locked, type){
+function taskRow(t, done, locked){
   return `<li>
     <span class="ico">${t.icon||'•'}</span>
     <div class="tinfo" data-info>
       <div class="t">${esc(t.title)}${t.desc?'<span class="more" data-more>؟</span>':''}
-        <span class="code ${type==='neg'?'n':''}">${esc(t.code||t.id)}</span></div>
+        <span class="code">${esc(t.code||t.id)}</span></div>
       ${t.desc?`<div class="d">${esc(t.desc)}</div>`:''}
     </div>
-    <button class="chk ${done?'on':''} ${type==='neg'?'neg':''}" data-id="${esc(t.id)}" ${locked?'disabled':''}>${type==='neg'?'−':'✓'}</button>
+    <button class="chk ${done?'on':''}" data-id="${esc(t.id)}" ${locked?'disabled':''}>✓</button>
   </li>`;
 }
 
-function bindTaskRows(root, type){
+function bindMore(root){
   root.querySelectorAll('[data-more]').forEach(el => el.onclick = e => {
     e.stopPropagation(); el.closest('.tinfo').classList.toggle('open');
   });
+}
+
+function bindTaskRows(root){
+  bindMore(root);
   root.querySelectorAll('.chk').forEach(el => el.onclick = () => {
-    const id = el.dataset.id, t = task(type, id);
-    const person = type==='neg' ? document.getElementById('negPerson').value : S.ui.person;
-    const ex = hasToday(person, type, id);
+    const id = el.dataset.id, t = task('pos', id), person = S.ui.person;
+    const ex = hasToday(person, 'pos', id);
     if(ex){
       if(!confirm(`ثبت امروزِ «${t.title}» برای ${person} حذف شود؟`)) return;
       dropLog(ex); save(); toast('ثبت حذف شد');
     }else{
-      if(type==='pos' && !gateState(person).ok){ toast('اول آب را روی home بگذار'); return; }
-      addLog({type, person, taskId:id, code:t.code||t.id, title:t.title, icon:t.icon, by:S.ui.person});
-      toast(type==='pos' ? `یک امتیاز مثبت برای ${person}` : `یک امتیاز منفی برای ${person}`);
+      if(!gateState(person).ok){ toast('اول آب را روی home بگذار'); return; }
+      addLog({type:'pos', person, taskId:id, code:t.code||t.id, title:t.title, icon:t.icon, by:S.ui.person});
+      toast(`یک امتیاز مثبت برای ${person}`);
     }
     render();
   });
 }
 
-/* --- scores tab --- */
+/* --- checkout list: every item starts as a penalty and gets cleared --- */
+
+/* follows whoever is checked in, unless someone deliberately picks another name */
+function coPerson(){
+  return (S.ui.coPerson && S.people.includes(S.ui.coPerson)) ? S.ui.coPerson : S.ui.person;
+}
+function sessionStart(person){ const ci = lastCheckin(person); return ci ? ci.ts : 0; }
+function sessionLogs(person){
+  const st = sessionStart(person);
+  return st ? logsOf(person).filter(l => l.ts >= st) : [];
+}
+function coCleared(person){
+  const map = {};
+  sessionLogs(person).forEach(l => { if(l.type==='co_ok') map[l.taskId] = l; });
+  return map;
+}
+function coRegistered(person){
+  return sessionLogs(person).filter(l => l.type==='checkout').sort((a,b)=>b.ts-a.ts)[0] || null;
+}
+
+function renderCheckout(){
+  const sel = document.getElementById('negPerson');
+  const cur = coPerson();
+  sel.innerHTML = S.people.map(p =>
+    `<option value="${esc(p)}" ${p===cur?'selected':''}>${esc(p)}</option>`).join('');
+  sel.value = cur;
+
+  const started = !!sessionStart(cur);
+  const cleared = coCleared(cur);
+  const done = coRegistered(cur);
+  const total = S.neg.length || 1;
+  const okN = S.neg.filter(t => cleared[t.id]).length;
+  const pending = S.neg.length - okN;
+
+  document.getElementById('coCount').innerHTML = started
+    ? `<b style="color:${pending?'var(--bad)':'var(--good)'};font-family:Lalezar,sans-serif;font-size:16px">${pending}</b> امتیاز منفی باقی مانده`
+    : 'برای فعال شدن لیست، اول چک‌این کن';
+  document.getElementById('coLeft').textContent = started ? `${okN} از ${S.neg.length} مورد انجام شد` : '';
+  document.getElementById('coFill').style.width = started ? Math.round(okN/total*100)+'%' : '0%';
+
+  const nl = document.getElementById('negList');
+  nl.innerHTML = S.neg.map(t => {
+    const ok = !!cleared[t.id];
+    return `<li class="${ok?'cleared':'pending'}">
+      <span class="ico">${t.icon||'•'}</span>
+      <div class="tinfo" data-info>
+        <div class="t">${esc(t.title)}${t.desc?'<span class="more" data-more>؟</span>':''}
+          <span class="code ${ok?'':'n'}">${esc(t.code||t.id)}</span></div>
+        ${t.desc?`<div class="d">${esc(t.desc)}</div>`:''}
+      </div>
+      <button class="chk ${ok?'on':'neg'}" data-co="${esc(t.id)}" ${(started&&!done)?'':'disabled'}>${ok?'✓':'−'}</button>
+    </li>`;
+  }).join('');
+  bindMore(nl);
+  nl.querySelectorAll('[data-co]').forEach(el => el.onclick = () => {
+    const id = el.dataset.co, t = task('neg', id), person = coPerson();
+    const ex = coCleared(person)[id];
+    if(ex){ dropLog(ex); save(); toast('دوباره منفی شد'); }
+    else{
+      addLog({type:'co_ok', person, taskId:id, code:t.code||t.id, title:t.title, icon:t.icon, by:S.ui.person});
+      toast('انجام شد — یک منفی کم شد');
+    }
+    render();
+  });
+
+  const btn = document.getElementById('btnCheckout');
+  const stamp = document.getElementById('coStamp');
+  if(!started){
+    btn.disabled = true; btn.textContent = 'اول چک‌این کن'; stamp.innerHTML = '';
+  }else if(done){
+    const miss = sessionLogs(cur).filter(l => l.type==='neg').length;
+    btn.disabled = true; btn.textContent = 'چک‌اوت این نوبت ثبت شد';
+    stamp.innerHTML = `<div class="costamp ${miss?'miss':''}">
+      🚪 چک‌اوت <b>${esc(cur)}</b> — ${stampLong(done.ts)}<br>
+      ${miss ? `${miss} مورد انجام‌نشده ماند و ${miss} امتیاز منفی ثبت شد.` : 'همه چیز انجام شده بود — بدون امتیاز منفی 🎉'}
+      <div class="row" style="margin-top:9px"><button class="btn sm" id="btnCoUndo">لغو چک‌اوت</button></div></div>`;
+    document.getElementById('btnCoUndo').onclick = undoCheckout;
+  }else{
+    btn.disabled = false;
+    btn.textContent = pending ? `🚪 ثبت چک‌اوت — ${pending} امتیاز منفی` : '🚪 ثبت چک‌اوت بدون منفی';
+    stamp.innerHTML = '';
+  }
+}
+
+function registerCheckout(){
+  const person = coPerson();
+  if(!sessionStart(person)){ toast('اول چک‌این کن'); return; }
+  if(coRegistered(person)){ toast('چک‌اوت این نوبت قبلاً ثبت شده'); return; }
+  const cleared = coCleared(person);
+  const missed = S.neg.filter(t => !cleared[t.id]);
+  const msg = missed.length
+    ? `${missed.length} مورد انجام نشده:\n${missed.map(t => '• ' + t.title).join('\n')}\n\nبرای هرکدام یک امتیاز منفی برای ${person} ثبت می‌شود. چک‌اوت ثبت شود؟`
+    : `همهٔ موارد انجام شده. چک‌اوت ${person} ثبت شود؟`;
+  if(!confirm(msg)) return;
+  missed.forEach(t => addLog({type:'neg', person, taskId:t.id, code:t.code||t.id, title:t.title, icon:t.icon, by:S.ui.person}));
+  addLog({type:'checkout', person, note: missed.length ? `${missed.length} مورد انجام‌نشده` : 'کامل', by:S.ui.person});
+  render();
+  toast(missed.length ? `چک‌اوت ثبت شد — ${missed.length} امتیاز منفی` : 'چک‌اوت کامل ثبت شد 🎉');
+}
+
+function undoCheckout(){
+  const person = coPerson();
+  const done = coRegistered(person);
+  if(!done) return;
+  if(!confirm('چک‌اوت لغو شود؟ امتیازهای منفی همین نوبت هم برداشته می‌شوند.')) return;
+  sessionLogs(person).forEach(l => { if(l.type==='neg' || l.type==='checkout') dropLog(l); });
+  save(); render(); toast('چک‌اوت لغو شد');
+}
+
+/* --- per-person analytics (no cross-person leaderboard) --- */
+
+const CH_POS = '#5B7F3E';
+const CH_NEG = '#B0442C';
+/* the negative series also carries a hatch, so it never relies on hue alone */
+const HATCH = 'repeating-linear-gradient(45deg,rgba(255,253,248,.6) 0 3px,transparent 3px 7px)';
+
 function rangeFilter(){
-  const v = document.getElementById('scoreRange').value;
+  const el = document.getElementById('scoreRange');
+  const v = el ? el.value : 'all';
   if(v==='all') return () => true;
   if(v==='today'){ const t = todayKey(); return l => dayKey(l.ts)===t; }
   const from = Date.now() - parseInt(v,10)*86400000;
   return l => l.ts >= from;
 }
-function renderScores(){
-  const f = rangeFilter();
-  document.getElementById('scoreBody').innerHTML = S.people.map(p => {
-    const ls = L().filter(l => l.person===p && f(l));
-    return `<tr>
-      <td class="name" data-p="${esc(p)}"><span class="av">${avatar(p)}</span>${esc(p)}</td>
-      <td><span class="pill p">${ls.filter(l=>l.type==='pos').length}+</span></td>
-      <td><span class="pill n">${ls.filter(l=>l.type==='neg').length}−</span></td>
-      <td class="sub">${ls.filter(l=>l.type==='checkin').length}</td>
-    </tr>`;
+
+/* a session is one check-in through its checkout */
+function buildSessions(person){
+  const out = [];
+  (person ? [person] : S.people).forEach(p => {
+    const ls = logsOf(p).sort((a,b)=>a.ts-b.ts);
+    let cur = null;
+    const close = () => { if(cur){ out.push(cur); cur = null; } };
+    ls.forEach(l => {
+      if(l.type==='checkin'){ close(); cur = {person:p, start:l.ts, end:null, pos:[], neg:[], ok:[]}; return; }
+      if(!cur) cur = {person:p, start:null, end:null, pos:[], neg:[], ok:[], orphan:true};
+      if(l.type==='pos') cur.pos.push(l);
+      else if(l.type==='neg') cur.neg.push(l);
+      else if(l.type==='co_ok') cur.ok.push(l);
+      else if(l.type==='checkout') cur.end = l.ts;
+    });
+    close();
+  });
+  return out.sort((a,b) => (b.start||b.end||0) - (a.start||a.end||0));
+}
+
+function byTask(list){
+  const m = {};
+  list.forEach(l => {
+    const k = l.taskId || l.code || l.title || '—';
+    if(!m[k]) m[k] = {label: l.title || k, code: l.code || '', icon: l.icon || '', v: 0};
+    m[k].v++;
+  });
+  return Object.values(m).sort((a,b) => b.v - a.v);
+}
+
+function hBars(items, color, hatch){
+  if(!items.length) return '<div class="empty">داده‌ای نیست.</div>';
+  const max = Math.max.apply(null, items.map(i => i.v));
+  const total = items.reduce((a,b) => a + b.v, 0) || 1;
+  return '<div class="bars">' + items.map(i => `
+    <div class="barrow">
+      <div class="barlab">${i.icon||''}<span class="tx">${esc(i.label)}</span></div>
+      <div class="barval">${i.v} • ${Math.round(i.v/total*100)}٪</div>
+      <div class="bartrack" title="${esc(i.label)}: ${i.v} بار">
+        <div class="barfill" style="width:${Math.max(3, Math.round(i.v/max*100))}%;background:${color}${hatch?';background-image:'+HATCH:''}"></div>
+      </div>
+    </div>`).join('') + '</div>';
+}
+
+function dailyChart(p){
+  const all = logsOf(p);
+  const days = [];
+  for(let i=13; i>=0; i--){
+    const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() - i);
+    const k = dayKey(d.getTime());
+    const ls = all.filter(l => dayKey(l.ts)===k);
+    days.push({k:k, lab:k.slice(5), pos:ls.filter(l=>l.type==='pos').length, neg:ls.filter(l=>l.type==='neg').length});
+  }
+  const tp = days.reduce((a,b)=>a+b.pos,0), tn = days.reduce((a,b)=>a+b.neg,0);
+  if(!tp && !tn) return '<div class="empty">در ۱۴ روز اخیر ثبتی نبوده.</div>';
+  const max = Math.max(1, Math.max.apply(null, days.map(d => Math.max(d.pos, d.neg))));
+  const W = 336, mid = 62, half = 46, step = W/14, bw = 15;
+  const bars = days.map((d, i) => {
+    const x = i*step + (step-bw)/2;
+    let out = '';
+    if(d.pos){
+      const h = Math.max(3, d.pos/max*half);
+      out += `<rect x="${x.toFixed(1)}" y="${(mid-h).toFixed(1)}" width="${bw}" height="${h.toFixed(1)}" rx="3" fill="${CH_POS}"><title>${d.k} — ${d.pos} مثبت</title></rect>`;
+    }
+    if(d.neg){
+      const h = Math.max(3, d.neg/max*half);
+      out += `<rect x="${x.toFixed(1)}" y="${mid}" width="${bw}" height="${h.toFixed(1)}" rx="3" fill="url(#hatchNeg)"><title>${d.k} — ${d.neg} منفی</title></rect>`;
+    }
+    return out;
   }).join('');
-  document.querySelectorAll('#scoreBody .name').forEach(el =>
-    el.onclick = () => personSheet(el.dataset.p));
+  const labs = days.map((d, i) =>
+    i % 3 === 0 ? `<text x="${(i*step + step/2).toFixed(1)}" y="126" font-size="8" text-anchor="middle" fill="#907A61" direction="ltr">${d.lab}</text>` : ''
+  ).join('');
+  return `
+  <div class="legend">
+    <span><i style="background:${CH_POS}"></i>مثبت (بالای خط) — ${tp}</span>
+    <span><i style="background:${CH_NEG};background-image:${HATCH}"></i>منفی (زیر خط، هاشور) — ${tn}</span>
+  </div>
+  <svg viewBox="0 0 ${W} 132" width="100%" height="132" role="img" aria-label="روند ۱۴ روز اخیر: ${tp} امتیاز مثبت و ${tn} امتیاز منفی">
+    <defs>
+      <pattern id="hatchNeg" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <rect width="6" height="6" fill="${CH_NEG}"></rect>
+        <line x1="0" y1="0" x2="0" y2="6" stroke="#FFFDF8" stroke-width="2"></line>
+      </pattern>
+    </defs>
+    <line x1="0" y1="${mid}" x2="${W}" y2="${mid}" stroke="#E2D2B6" stroke-width="1"></line>
+    ${bars}${labs}
+  </svg>`;
+}
+
+function renderScores(){
+  const grid = document.getElementById('scorePeople');
+  if(!grid) return;
+  /* follows the current person until someone deliberately picks another name */
+  const cur = S.people.includes(S.ui.scorePerson) ? S.ui.scorePerson : S.ui.person;
+  grid.innerHTML = S.people.map(p =>
+    `<button class="person ${p===cur?'on':''}" data-sp="${esc(p)}">
+       <span class="av">${avatar(p)}</span>${esc(p)}</button>`).join('');
+  grid.querySelectorAll('[data-sp]').forEach(el => el.onclick = () => {
+    S.ui.scorePerson = el.dataset.sp; save(); renderScores();
+  });
+  renderPersonPanel(cur);
+}
+
+function renderPersonPanel(p){
+  const box = document.getElementById('personPanel');
+  if(!box) return;
+  const f = rangeFilter();
+  const ls = logsOf(p).filter(f);
+  const pos = ls.filter(l => l.type==='pos');
+  const neg = ls.filter(l => l.type==='neg');
+  const cis = ls.filter(l => l.type==='checkin');
+  const cos = ls.filter(l => l.type==='checkout');
+  const sess = buildSessions(p).filter(x => f({ts: x.start || x.end || 0}));
+  const closed = sess.filter(x => x.end);
+  const clean = closed.filter(x => !x.neg.length).length;
+  const rate = closed.length ? Math.round(clean/closed.length*100) : 0;
+  const open = sess.filter(x => x.start && !x.end).length;
+
+  const rows = closed.concat(sess.filter(x => !x.end)).sort((a,b)=>(b.start||0)-(a.start||0)).slice(0, 12);
+
+  box.innerHTML = `
+    <div class="card">
+      <h2>${avatar(p)} ${esc(p)}</h2>
+      <div class="stat">
+        <div><b style="color:${CH_POS}">${pos.length}</b><span>امتیاز مثبت</span></div>
+        <div><b style="color:${CH_NEG}">${neg.length}</b><span>امتیاز منفی</span></div>
+        <div><b style="color:var(--brand)">${cis.length}</b><span>چک‌این</span></div>
+        <div><b style="color:var(--brand)">${cos.length}</b><span>چک‌اوت</span></div>
+      </div>
+      <div class="costat">
+        <span>چک‌اوت کامل و بدون منفی: <b>${rate}٪</b> <span class="sub">(${clean} از ${closed.length})</span></span>
+        ${open ? `<span class="badge warn">${open} نوبت بدون چک‌اوت</span>` : '<span class="badge ok">همهٔ نوبت‌ها بسته شده</span>'}
+      </div>
+      <div class="pbar"><div class="pbar-fill" style="width:${rate}%"></div></div>
+    </div>
+
+    <div class="card">
+      <div class="chartbox">
+        <h3>تفکیک کارهای انجام‌شده</h3>
+        <p class="cap">سهم هر کار از ${pos.length} امتیاز مثبت ${esc(p)}</p>
+        ${hBars(byTask(pos), CH_POS, false)}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="chartbox">
+        <h3>موارد چک‌اوت که انجام نشده</h3>
+        <p class="cap">هر مورد یک امتیاز منفی — مجموع ${neg.length}</p>
+        ${hBars(byTask(neg), CH_NEG, true)}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="chartbox">
+        <h3>روند ۱۴ روز اخیر</h3>
+        <p class="cap">مستقل از بازهٔ انتخابی بالا</p>
+        ${dailyChart(p)}
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>🗓 نوبت‌های حضور</h2>
+      <p class="hint">هر ردیف یک نوبت است: از چک‌این تا چک‌اوت، با کارهایی که در همان نوبت انجام شده.</p>
+      <div class="tblwrap">
+        <table class="sesstbl">
+          <thead><tr><th>تاریخ</th><th>ورود</th><th>خروج</th><th>مدت</th><th>مثبت</th><th>منفی</th><th>کارهای انجام‌شده</th></tr></thead>
+          <tbody>${rows.length ? rows.map(x => {
+            const mins = (x.start && x.end) ? Math.max(0, Math.round((x.end - x.start)/60000)) : null;
+            return `<tr>
+              <td class="mono">${x.start ? dayKey(x.start) : '—'}</td>
+              <td class="mono">${x.start ? timeStr(x.start) : '—'}</td>
+              <td class="mono">${x.end ? timeStr(x.end) : '<span class="badge warn">باز</span>'}</td>
+              <td class="mono">${mins==null ? '—' : (mins >= 60 ? Math.floor(mins/60)+'س '+(mins%60)+'د' : mins+'د')}</td>
+              <td><span class="pill p">${x.pos.length}</span></td>
+              <td>${x.neg.length ? `<span class="pill n">${x.neg.length}</span>` : '<span class="badge ok">۰</span>'}</td>
+              <td class="sub">${x.pos.map(l => esc(l.code||'')).join('، ') || '—'}</td>
+            </tr>`;
+          }).join('') : '<tr><td colspan="7"><div class="empty">نوبتی ثبت نشده.</div></td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>📋 ریز فعالیت‌ها</h2>
+      <ul class="logs" id="personLogs">
+        ${ls.length ? ls.slice().sort((a,b)=>b.ts-a.ts).slice(0,40).map(l => logRow(l)).join('')
+                    : '<li><div class="empty">ثبتی در این بازه نیست.</div></li>'}
+      </ul>
+    </div>`;
+  bindLogRows(document.getElementById('personLogs'));
 }
 
 /* --- history tab --- */
@@ -804,20 +1136,6 @@ function openModal(title, html){
 function closeModal(){ document.getElementById('modal').classList.remove('on'); }
 document.getElementById('mClose').onclick = closeModal;
 document.getElementById('modal').onclick = e => { if(e.target.id==='modal') closeModal(); };
-
-function personSheet(p){
-  const ls = logsOf(p).sort((a,b)=>b.ts-a.ts);
-  openModal(avatar(p)+' تاریخچهٔ ' + p, `
-    <div class="stat">
-      <div><b style="color:var(--good)">${ls.filter(l=>l.type==='pos').length}</b><span>امتیاز مثبت</span></div>
-      <div><b style="color:var(--bad)">${ls.filter(l=>l.type==='neg').length}</b><span>امتیاز منفی</span></div>
-      <div><b style="color:var(--brand)">${ls.filter(l=>l.type==='checkin').length}</b><span>ورود</span></div>
-    </div>
-    <ul class="logs" id="sheetLogs">
-      ${ls.length ? ls.map(l => logRow(l)).join('') : '<li><div class="empty">ثبتی وجود ندارد.</div></li>'}
-    </ul>`);
-  bindLogRows(document.getElementById('sheetLogs'));
-}
 
 function editLog(id){
   const l = S.logs.find(x => x.id===id);
@@ -1070,7 +1388,7 @@ function historyRows(){
     const def = l.taskId ? (task('pos', l.taskId) || task('neg', l.taskId)) : null;
     rows.push([
       i+1, dayKey(l.ts), timeStr(l.ts), weekday(l.ts), l.person, typeName(l.type),
-      l.code || '', l.title || (l.type==='checkin' ? 'ورود به خانه' : ''),
+      l.code || '', l.title || (l.type==='checkin' ? 'ورود به خانه' : l.type==='checkout' ? 'چک‌اوت' : ''),
       def ? (def.desc || '') : '',
       l.type==='pos' ? 1 : 0, l.type==='neg' ? 1 : 0,
       l.note || '', l.by || '', l.id
@@ -1078,26 +1396,90 @@ function historyRows(){
   });
   return rows;
 }
-function scoreRows(){
-  const rows = [['نام','امتیاز مثبت','امتیاز منفی','تعداد ورود','آخرین ورود','آخرین فعالیت']];
-  S.people.forEach(p => {
-    const ls = logsOf(p);
-    const ci = ls.filter(l=>l.type==='checkin').sort((a,b)=>b.ts-a.ts)[0];
-    const last = ls.slice().sort((a,b)=>b.ts-a.ts)[0];
+
+function sessionRows(){
+  const rows = [['نام','تاریخ','ساعت ورود','ساعت خروج','مدت (دقیقه)','امتیاز مثبت','امتیاز منفی',
+                 'کارهای انجام‌شده','موارد انجام‌نشدهٔ چک‌اوت','وضعیت']];
+  buildSessions().slice().sort((a,b)=>(a.start||0)-(b.start||0)).forEach(x => {
+    const mins = (x.start && x.end) ? Math.max(0, Math.round((x.end - x.start)/60000)) : '';
     rows.push([
-      p, ls.filter(l=>l.type==='pos').length, ls.filter(l=>l.type==='neg').length,
-      ls.filter(l=>l.type==='checkin').length,
-      ci ? stamp(ci.ts) : '—', last ? stamp(last.ts) : '—'
+      x.person,
+      x.start ? dayKey(x.start) : (x.end ? dayKey(x.end) : ''),
+      x.start ? timeStr(x.start) : '',
+      x.end ? timeStr(x.end) : '',
+      mins === '' ? '' : mins,
+      x.pos.length, x.neg.length,
+      x.pos.map(l => (l.code||'') + ' ' + (l.title||'')).join('، '),
+      x.neg.map(l => (l.code||'') + ' ' + (l.title||'')).join('، '),
+      !x.start ? 'بدون چک‌این' : !x.end ? 'باز — چک‌اوت نشده' : (x.neg.length ? 'بسته با منفی' : 'بسته و کامل')
     ]);
   });
   return rows;
 }
+
+function scoreRows(){
+  const rows = [['نام','امتیاز مثبت','امتیاز منفی','تعداد چک‌این','تعداد چک‌اوت','نوبت باز',
+                 'چک‌اوت کامل','درصد چک‌اوت کامل','آخرین ورود','آخرین فعالیت']];
+  S.people.forEach(p => {
+    const ls = logsOf(p);
+    const sess = buildSessions(p);
+    const closed = sess.filter(x => x.end);
+    const clean = closed.filter(x => !x.neg.length).length;
+    const ci = ls.filter(l=>l.type==='checkin').sort((a,b)=>b.ts-a.ts)[0];
+    const last = ls.slice().sort((a,b)=>b.ts-a.ts)[0];
+    rows.push([
+      p,
+      ls.filter(l=>l.type==='pos').length,
+      ls.filter(l=>l.type==='neg').length,
+      ls.filter(l=>l.type==='checkin').length,
+      ls.filter(l=>l.type==='checkout').length,
+      sess.filter(x => x.start && !x.end).length,
+      clean,
+      closed.length ? Math.round(clean/closed.length*100) : 0,
+      ci ? stamp(ci.ts) : '—',
+      last ? stamp(last.ts) : '—'
+    ]);
+  });
+  return rows;
+}
+
+function dailyRows(){
+  const rows = [['تاریخ','نام','امتیاز مثبت','امتیاز منفی','چک‌این','چک‌اوت']];
+  const m = {};
+  L().forEach(l => {
+    const k = dayKey(l.ts) + '|' + l.person;
+    if(!m[k]) m[k] = {d:dayKey(l.ts), p:l.person, pos:0, neg:0, ci:0, co:0};
+    if(l.type==='pos') m[k].pos++;
+    else if(l.type==='neg') m[k].neg++;
+    else if(l.type==='checkin') m[k].ci++;
+    else if(l.type==='checkout') m[k].co++;
+  });
+  Object.values(m).sort((a,b) => a.d===b.d ? a.p.localeCompare(b.p) : (a.d < b.d ? -1 : 1))
+    .forEach(x => rows.push([x.d, x.p, x.pos, x.neg, x.ci, x.co]));
+  return rows;
+}
+
+/* tasks down the side, people across the top */
+function matrixRows(){
+  const rows = [['کد','عنوان','نوع'].concat(S.people).concat(['مجموع'])];
+  const count = (taskId, person) => L().filter(l =>
+    l.taskId===taskId && l.person===person && (l.type==='pos' || l.type==='neg')).length;
+  const add = (t, label) => {
+    const per = S.people.map(p => count(t.id, p));
+    rows.push([t.code||t.id, t.title, label].concat(per).concat([per.reduce((a,b)=>a+b,0)]));
+  };
+  S.pos.forEach(t => add(t, t.gate ? 'مثبت — الزامی' : 'مثبت'));
+  S.neg.forEach(t => add(t, 'چک‌اوت — منفی'));
+  return rows;
+}
+
 function taskRows(){
   const rows = [['کد','نوع','عنوان','توضیح کامل']];
   S.pos.forEach(t => rows.push([t.code||t.id, t.gate ? 'مثبت — الزامی' : 'مثبت', t.title, t.desc||'']));
-  S.neg.forEach(t => rows.push([t.code||t.id, 'قبل از رفتن — منفی', t.title, t.desc||'']));
+  S.neg.forEach(t => rows.push([t.code||t.id, 'چک‌اوت — منفی', t.title, t.desc||'']));
   return rows;
 }
+
 function toCsv(rows){
   return '﻿' + rows.map(r => r.map(c => {
     const s = String(c==null?'':c);
@@ -1116,8 +1498,11 @@ async function exportExcel(){
   if(!L().length){ toast('هنوز چیزی ثبت نشده'); return; }
   const hist = historyRows();
   const book = buildXlsx([
-    {name:'تاریخچه', rows:hist, widths:[6,13,7,10,10,12,8,26,40,10,10,20,10,14]},
-    {name:'امتیازها', rows:scoreRows(), widths:[12,11,11,11,18,18]},
+    {name:'تاریخچه', rows:hist, widths:[6,13,7,10,10,16,8,26,40,10,10,20,10,14]},
+    {name:'نوبت‌ها', rows:sessionRows(), widths:[10,13,10,10,11,10,10,40,40,17]},
+    {name:'خلاصهٔ افراد', rows:scoreRows(), widths:[12,11,11,12,12,10,12,15,18,18]},
+    {name:'روزانه', rows:dailyRows(), widths:[13,12,11,11,9,9]},
+    {name:'آمار کارها', rows:matrixRows(), widths:[8,28,16,10,10,10,9]},
     {name:'کارها', rows:taskRows(), widths:[8,20,28,46]}
   ]);
   const base = 'house-tracker-' + fileStamp();
@@ -1243,6 +1628,7 @@ document.getElementById('btnGate').onclick = () => {
     dropLog(g.home); save(); toast('تأیید برداشته شد');
   }else{
     if(!g.checkedIn){ toast('اول چک‌این کن'); document.querySelector('.tab[data-tab="checkin"]').click(); return; }
+    if(!confirm('مطمئنی آب را روی home گذاشتی؟\n\nبا تأیید، بقیهٔ کارهای مثبت برایت فعال می‌شود.')) return;
     const t = S.pos.find(x => x.id===GATE_ID) || {code:'HOME', icon:'💧', title:'آب را روی home بگذار'};
     addLog({type:'pos', person:p, taskId:GATE_ID, code:t.code||'HOME', title:t.title, icon:t.icon, by:p});
     toast('ثبت شد — حالا بقیهٔ کارها فعال است');
@@ -1250,7 +1636,10 @@ document.getElementById('btnGate').onclick = () => {
   render();
 };
 
-document.getElementById('negPerson').onchange = renderTasks;
+document.getElementById('negPerson').onchange = e => {
+  S.ui.coPerson = e.target.value; save(); renderCheckout();
+};
+document.getElementById('btnCheckout').onclick = registerCheckout;
 document.getElementById('scoreRange').onchange = renderScores;
 document.getElementById('hPerson').onchange = renderHistory;
 document.getElementById('hType').onchange = renderHistory;
