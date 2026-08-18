@@ -3,7 +3,7 @@
  * ------------------------------------------------------------------
  * این فایل را در Extensions → Apps Script همان Google Sheet بچسبان،
  * TOKEN را عوض کن، و با Deploy → New deployment → Web app منتشرش کن.
- * راهنمای کامل در SETUP-SYNC.md
+ * راهنمای کامل در SETUP.md
  */
 
 /** رمز مشترک — همین را در تنظیمات اپ هم وارد کن. حتماً عوضش کن. */
@@ -14,9 +14,11 @@ var CONFIG_SHEET = 'config';
 
 /** ستون‌های برگهٔ logs — ستون‌های اول برای خواندن آدم، بقیه برای برنامه */
 var HEAD = ['id','تاریخ','ساعت','روز هفته','نام','نوع','کد کار','عنوان کار','یادداشت',
-            'ثبت‌کننده','امتیاز مثبت','امتیاز منفی','type','taskId','icon','ts','rev','deleted'];
+            'ثبت‌کننده','امتیاز مثبت','امتیاز منفی','نوبت (چک‌این)',
+            'type','taskId','icon','ts','rev','deleted','sess'];
 var C = {id:0, date:1, time:2, wd:3, person:4, typeFa:5, code:6, title:7, note:8,
-         by:9, pos:10, neg:11, type:12, taskId:13, icon:14, ts:15, rev:16, deleted:17};
+         by:9, pos:10, neg:11, sessAt:12,
+         type:13, taskId:14, icon:15, ts:16, rev:17, deleted:18, sess:19};
 
 var WD = ['یکشنبه','دوشنبه','سه‌شنبه','چهارشنبه','پنجشنبه','جمعه','شنبه'];
 
@@ -100,7 +102,16 @@ function configSheet(){
 
 function tz(){ return book().getSpreadsheetTimeZone() || Session.getScriptTimeZone(); }
 
-function rowOf(log, rev){
+/* the check-in time a record points at. tsById must already include the
+   rows arriving in this same request, not only what the sheet holds. */
+function sessionStamp(log, tsById){
+  if(log.type === 'checkin') return fmt(log.ts, 'yyyy-MM-dd HH:mm');
+  if(!log.sess) return 'بدون چک‌این';
+  var at = tsById[String(log.sess)];
+  return at ? fmt(at, 'yyyy-MM-dd HH:mm') : 'بدون چک‌این';
+}
+
+function rowOf(log, rev, tsById){
   var d = new Date(Number(log.ts) || Date.now());
   var typeFa = log.type === 'checkin' ? 'ورود'
              : log.type === 'pos' ? 'کار مثبت'
@@ -127,15 +138,26 @@ function rowOf(log, rev){
   r[C.ts] = Number(log.ts) || Date.now();
   r[C.rev] = rev;
   r[C.deleted] = log.deleted ? 1 : 0;
+  r[C.sess] = log.type === 'checkin' ? log.id : (log.sess || '');
+  r[C.sessAt] = sessionStamp(log, tsById || {});
   return r;
 }
 
 function upsertLogs(logs){
   var sh = logsSheet();
   var last = sh.getLastRow();
-  var ids = last > 1 ? sh.getRange(2, 1, last - 1, 1).getValues() : [];
-  var at = {};
-  for(var i = 0; i < ids.length; i++) at[String(ids[i][0])] = i + 2;
+  var existing = last > 1 ? sh.getRange(2, 1, last - 1, HEAD.length).getValues() : [];
+  var at = {}, tsById = {};
+  for(var i = 0; i < existing.length; i++){
+    var eid = String(existing[i][C.id] || '');
+    if(!eid) continue;
+    at[eid] = i + 2;
+    tsById[eid] = Number(existing[i][C.ts]) || 0;
+  }
+  /* rows in this batch can reference each other (a chore and its check-in) */
+  for(var j = 0; j < logs.length; j++){
+    if(logs[j] && logs[j].id) tsById[String(logs[j].id)] = Number(logs[j].ts) || 0;
+  }
 
   var base = nextRev(logs.length);          /* یک بلوک rev برای کل این درخواست */
   var rev = base - logs.length;
@@ -145,7 +167,7 @@ function upsertLogs(logs){
     var log = logs[k];
     if(!log || !log.id) continue;
     rev++;
-    var row = rowOf(log, rev);
+    var row = rowOf(log, rev, tsById);
     var r = at[String(log.id)];
     if(r) sh.getRange(r, 1, 1, HEAD.length).setValues([row]);
     else appends.push(row);
@@ -177,6 +199,7 @@ function readLogs(since){
       icon: String(v[C.icon] || ''),
       note: String(v[C.note] || ''),
       by: String(v[C.by] || ''),
+      sess: String(v[C.sess] || ''),
       deleted: Number(v[C.deleted]) ? true : false,
       rev: rev
     });
@@ -214,14 +237,14 @@ function buildReports(){
     sessions.map(function(x){
       return [
         x.person,
-        x.start ? fmt(x.start, 'yyyy-MM-dd') : (x.end ? fmt(x.end, 'yyyy-MM-dd') : ''),
+        x.start ? fmt(x.start, 'yyyy-MM-dd') : (x.end ? fmt(x.end, 'yyyy-MM-dd') + ' (بدون چک‌این)' : 'بدون چک‌این'),
         x.start ? fmt(x.start, 'HH:mm') : '',
         x.end ? fmt(x.end, 'HH:mm') : '',
         (x.start && x.end) ? Math.max(0, Math.round((x.end - x.start)/60000)) : '',
         x.pos.length, x.neg.length,
         x.pos.map(label).join('، '),
         x.neg.map(label).join('، '),
-        !x.start ? 'بدون چک‌این' : !x.end ? 'باز — چک‌اوت نشده' : (x.neg.length ? 'بسته با منفی' : 'بسته و کامل')
+        !x.start ? 'ثبت بدون چک‌این' : !x.end ? 'باز — چک‌اوت نشده' : (x.neg.length ? 'بسته با منفی' : 'بسته و کامل')
       ];
     }));
 
@@ -295,7 +318,7 @@ function peopleFromConfig(logs){
   return seen;
 }
 
-/** یک نوبت = از چک‌این تا چک‌اوت */
+/** یک نوبت = یک چک‌این و هر ثبتی که به آن ارجاع می‌دهد */
 function buildSessions(logs){
   var byPerson = {};
   logs.forEach(function(l){
@@ -304,22 +327,36 @@ function buildSessions(logs){
   });
   var out = [];
   Object.keys(byPerson).forEach(function(p){
-    var cur = null;
-    byPerson[p].forEach(function(l){
-      if(l.type === 'checkin'){
-        if(cur) out.push(cur);
-        cur = {person:p, start:l.ts, end:null, pos:[], neg:[], ok:[]};
-        return;
-      }
-      if(!cur) cur = {person:p, start:null, end:null, pos:[], neg:[], ok:[]};
-      if(l.type === 'pos') cur.pos.push(l);
-      else if(l.type === 'neg') cur.neg.push(l);
-      else if(l.type === 'co_ok') cur.ok.push(l);
-      else if(l.type === 'checkout') cur.end = l.ts;
+    var mine = byPerson[p];
+    var map = {};
+    var orphan = {person:p, id:'', start:null, end:null, pos:[], neg:[], ok:[]};
+
+    mine.forEach(function(l){
+      if(l.type === 'checkin') map[l.id] = {person:p, id:l.id, start:l.ts, end:null, pos:[], neg:[], ok:[]};
     });
-    if(cur) out.push(cur);
+    mine.forEach(function(l){
+      if(l.type === 'checkin') return;
+      var key = l.sess || nearestCheckin(mine, l.ts);
+      var t = map[key] || orphan;
+      if(l.type === 'pos') t.pos.push(l);
+      else if(l.type === 'neg') t.neg.push(l);
+      else if(l.type === 'co_ok') t.ok.push(l);
+      else if(l.type === 'checkout') t.end = l.ts;
+    });
+
+    Object.keys(map).forEach(function(k){ out.push(map[k]); });
+    if(orphan.pos.length || orphan.neg.length || orphan.ok.length || orphan.end) out.push(orphan);
   });
   return out.sort(function(a,b){ return (a.start||a.end||0) - (b.start||b.end||0); });
+}
+
+/** ثبت‌های قدیمی که هنوز ارجاع ندارند، با تاریخ به نزدیک‌ترین چک‌این قبلی بسته می‌شوند */
+function nearestCheckin(mine, ts){
+  var best = '';
+  mine.forEach(function(l){
+    if(l.type === 'checkin' && l.ts <= ts) best = l.id;
+  });
+  return best;
 }
 
 function writeReport(name, head, rows){

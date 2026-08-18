@@ -206,6 +206,9 @@
   }
   .sheet h3{margin:0 0 13px;font-size:19px;color:var(--brand-deep);display:flex;justify-content:space-between;align-items:center;gap:10px}
   .x{background:none;border:0;color:var(--muted);font-size:26px;cursor:pointer;line-height:1;padding:0 4px}
+  .dlgmsg{font-size:14px;line-height:1.9;margin-bottom:15px;white-space:normal}
+  .dlgrow{gap:9px}
+  .dlgrow .btn{flex:1;min-width:120px}
 
   /* ---------- misc ---------- */
   .toast{
@@ -583,6 +586,8 @@ function toast(msg){
 
 function addLog(o){
   const log = Object.assign({id:uid(), ts:Date.now(), note:''}, o);
+  if(log.type==='checkin') log.sess = log.id;
+  else if(log.sess === undefined || log.sess === null) log.sess = sessionIdFor(log.person, log.ts);
   touch(log); S.logs.push(log); save(); return log;
 }
 function logsOf(person){ return L().filter(l => l.person===person); }
@@ -591,17 +596,38 @@ function hasToday(person, type, taskId){
   return L().find(l => l.person===person && l.type===type && l.taskId===taskId && dayKey(l.ts)===t) || null;
 }
 function lastCheckin(person){
-  const c = L().filter(l => l.type==='checkin' && l.person===person).sort((a,b)=>b.ts-a.ts);
-  return c[0] || null;
+  const c = checkins(person);
+  return c.length ? c[c.length-1] : null;
 }
-/* gate = checked in today AND confirmed HOME today (after that check-in) */
+function checkins(person){
+  return L().filter(l => l.type==='checkin' && l.person===person).sort((a,b)=>a.ts-b.ts);
+}
+
+/* A stay can span several days. The open session is the person's latest
+   check-in that no checkout has closed yet — no "same day" rule anywhere. */
+function openSession(person){
+  const c = checkins(person);
+  if(!c.length) return null;
+  const last = c[c.length-1];
+  const closed = L().some(l => l.type==='checkout' && l.person===person &&
+    (l.sess ? l.sess===last.id : l.ts >= last.ts));
+  return closed ? null : last;
+}
+
+/* Which check-in a record belongs to, decided by its own date/time.
+   This is what ties chores and checkouts to the right visit in the Sheet. */
+function sessionIdFor(person, ts){
+  const c = checkins(person).filter(x => x.ts <= ts);
+  return c.length ? c[c.length-1].id : '';
+}
+function sessionOf(log){ return log.type==='checkin' ? log.id : (log.sess || sessionIdFor(log.person, log.ts)); }
+
+/* the "water to home" confirmation is per person per day and needs no check-in */
 function gateState(person){
-  const ci = lastCheckin(person);
-  const checkedIn = !!(ci && dayKey(ci.ts)===todayKey());
   const home = L().filter(l => l.person===person && l.type==='pos' && l.taskId===GATE_ID && dayKey(l.ts)===todayKey())
-                     .sort((a,b)=>b.ts-a.ts)[0] || null;
-  const ok = checkedIn && !!home && home.ts >= ci.ts;
-  return {checkedIn, home, ok, ci};
+                  .sort((a,b)=>b.ts-a.ts)[0] || null;
+  const sess = openSession(person);
+  return {home, ok: !!home, sess, inside: !!sess, ci: lastCheckin(person)};
 }
 
 /* ---------------- rendering ---------------- */
@@ -614,7 +640,7 @@ function render(){
 function renderHeader(){
   const g = gateState(S.ui.person);
   document.getElementById('whoNow').textContent =
-    avatar(S.ui.person) + ' ' + S.ui.person + (g.checkedIn ? ' • وارد شده' : ' • چک‌این نشده');
+    avatar(S.ui.person) + ' ' + S.ui.person + (g.inside ? ' • در خانه' : ' • نوبت باز ندارد');
 }
 
 /* --- check-in tab --- */
@@ -628,9 +654,11 @@ function renderCheckin(){
   });
 
   const g = gateState(S.ui.person);
-  document.getElementById('checkinState').innerHTML = g.checkedIn
-    ? `آخرین ورود <b>${esc(S.ui.person)}</b>: ${stampLong(g.ci.ts)}`
-    : `<b>${esc(S.ui.person)}</b> امروز چک‌این نکرده است.`;
+  document.getElementById('checkinState').innerHTML = !g.ci
+    ? `<b>${esc(S.ui.person)}</b> هنوز هیچ چک‌اینی ندارد.`
+    : g.inside
+      ? `<b>${esc(S.ui.person)}</b> از ${stampLong(g.sess.ts)} در خانه است — تا چک‌اوت نکند همین نوبت باز می‌ماند و لازم نیست دوباره چک‌این کند.`
+      : `آخرین ورود <b>${esc(S.ui.person)}</b>: ${stampLong(g.ci.ts)} — این نوبت با چک‌اوت بسته شده.`;
 
   const today = L().filter(l => l.type==='checkin' && dayKey(l.ts)===todayKey()).sort((a,b)=>b.ts-a.ts);
   const ul = document.getElementById('todayCheckins');
@@ -648,14 +676,15 @@ function renderTasks(){
   const btn = document.getElementById('btnGate');
   box.classList.toggle('done', g.ok);
   document.getElementById('gateTitle').textContent = g.ok ? '✅ آب روی home تنظیم شد' : '💧 اول این را انجام بده';
+  const where = g.inside
+    ? `نوبت باز از ${stamp(g.sess.ts)}`
+    : 'نوبت بازی نداری — اگر تازه وارد شده‌ای، از تبِ ورود چک‌این کن.';
   document.getElementById('gateText').innerHTML = g.ok
-    ? `<b>${esc(person)}</b> در ${stamp(g.home.ts)} تأیید کرد. حالا بقیهٔ کارها فعال است.`
-    : (g.checkedIn
-        ? 'وقتی وارد می‌شوید آب را به <b>home</b> تغییر دهید. تا این را تأیید نکنید، ثبت بقیهٔ کارهای مثبت فعال نمی‌شود.'
-        : 'اول در تبِ ورود چک‌این کن، بعد آب را روی <b>home</b> بگذار.');
-  btn.textContent = g.ok ? 'لغو تأیید' : (g.checkedIn ? 'انجام شد — آب روی home است' : 'اول چک‌این کن');
+    ? `<b>${esc(person)}</b> امروز در ${timeStr(g.home.ts)} تأیید کرد. ثبت کارها باز است.<br><span class="sub">${where}</span>`
+    : `وقتی وارد می‌شوید آب را به <b>home</b> تغییر دهید. تا این را تأیید نکنید، ثبت کارهای مثبت فعال نمی‌شود.<br><span class="sub">${where}</span>`;
+  btn.textContent = g.ok ? 'لغو تأیید امروز' : 'انجام شد — آب روی home است';
   btn.className = 'btn ' + (g.ok ? 'ghost' : 'primary');
-  btn.disabled = !g.checkedIn && !g.ok;
+  btn.disabled = false;
 
   const pl = document.getElementById('posList');
   pl.innerHTML = S.pos.filter(t => t.id!==GATE_ID)
@@ -685,11 +714,11 @@ function bindMore(root){
 
 function bindTaskRows(root){
   bindMore(root);
-  root.querySelectorAll('.chk').forEach(el => el.onclick = () => {
+  root.querySelectorAll('.chk').forEach(el => el.onclick = async () => {
     const id = el.dataset.id, t = task('pos', id), person = S.ui.person;
     const ex = hasToday(person, 'pos', id);
     if(ex){
-      if(!confirm(`ثبت امروزِ «${t.title}» برای ${person} حذف شود؟`)) return;
+      if(!await ask(`ثبت امروزِ «${t.title}» برای ${person} حذف شود؟`, {ok:'حذف کن', danger:true})) return;
       dropLog(ex); save(); toast('ثبت حذف شد');
     }else{
       if(!gateState(person).ok){ toast('اول آب را روی home بگذار'); return; }
@@ -706,18 +735,25 @@ function bindTaskRows(root){
 function coPerson(){
   return (S.ui.coPerson && S.people.includes(S.ui.coPerson)) ? S.ui.coPerson : S.ui.person;
 }
-function sessionStart(person){ const ci = lastCheckin(person); return ci ? ci.ts : 0; }
-function sessionLogs(person){
-  const st = sessionStart(person);
-  return st ? logsOf(person).filter(l => l.ts >= st) : [];
+/* Cleared checkout items belong to the open session; with no open session
+   (nobody checked in) they are scoped to today so the list still works. */
+function coScope(person){
+  const open = openSession(person);
+  if(open) return {start: open.ts, sess: open.id, open: true};
+  const d = new Date(); d.setHours(0,0,0,0);
+  return {start: d.getTime(), sess: sessionIdFor(person, Date.now()), open: false};
+}
+function scopeLogs(person){
+  const sc = coScope(person);
+  return logsOf(person).filter(l => l.ts >= sc.start);
 }
 function coCleared(person){
   const map = {};
-  sessionLogs(person).forEach(l => { if(l.type==='co_ok') map[l.taskId] = l; });
+  scopeLogs(person).forEach(l => { if(l.type==='co_ok') map[l.taskId] = l; });
   return map;
 }
 function coRegistered(person){
-  return sessionLogs(person).filter(l => l.type==='checkout').sort((a,b)=>b.ts-a.ts)[0] || null;
+  return scopeLogs(person).filter(l => l.type==='checkout').sort((a,b)=>b.ts-a.ts)[0] || null;
 }
 
 function renderCheckout(){
@@ -727,18 +763,17 @@ function renderCheckout(){
     `<option value="${esc(p)}" ${p===cur?'selected':''}>${esc(p)}</option>`).join('');
   sel.value = cur;
 
-  const started = !!sessionStart(cur);
+  const sc = coScope(cur);
   const cleared = coCleared(cur);
   const done = coRegistered(cur);
   const total = S.neg.length || 1;
   const okN = S.neg.filter(t => cleared[t.id]).length;
   const pending = S.neg.length - okN;
 
-  document.getElementById('coCount').innerHTML = started
-    ? `<b style="color:${pending?'var(--bad)':'var(--good)'};font-family:Lalezar,sans-serif;font-size:16px">${pending}</b> امتیاز منفی باقی مانده`
-    : 'برای فعال شدن لیست، اول چک‌این کن';
-  document.getElementById('coLeft').textContent = started ? `${okN} از ${S.neg.length} مورد انجام شد` : '';
-  document.getElementById('coFill').style.width = started ? Math.round(okN/total*100)+'%' : '0%';
+  document.getElementById('coCount').innerHTML =
+    `<b style="color:${pending?'var(--bad)':'var(--good)'};font-family:Lalezar,sans-serif;font-size:16px">${pending}</b> امتیاز منفی باقی مانده`;
+  document.getElementById('coLeft').textContent = `${okN} از ${S.neg.length} مورد انجام شد`;
+  document.getElementById('coFill').style.width = Math.round(okN/total*100)+'%';
 
   const nl = document.getElementById('negList');
   nl.innerHTML = S.neg.map(t => {
@@ -750,7 +785,7 @@ function renderCheckout(){
           <span class="code ${ok?'':'n'}">${esc(t.code||t.id)}</span></div>
         ${t.desc?`<div class="d">${esc(t.desc)}</div>`:''}
       </div>
-      <button class="chk ${ok?'on':'neg'}" data-co="${esc(t.id)}" ${(started&&!done)?'':'disabled'}>${ok?'✓':'−'}</button>
+      <button class="chk ${ok?'on':'neg'}" data-co="${esc(t.id)}" ${done?'disabled':''}>${ok?'✓':'−'}</button>
     </li>`;
   }).join('');
   bindMore(nl);
@@ -759,20 +794,19 @@ function renderCheckout(){
     const ex = coCleared(person)[id];
     if(ex){ dropLog(ex); save(); toast('دوباره منفی شد'); }
     else{
-      addLog({type:'co_ok', person, taskId:id, code:t.code||t.id, title:t.title, icon:t.icon, by:S.ui.person});
+      addLog({type:'co_ok', person, taskId:id, code:t.code||t.id, title:t.title, icon:t.icon,
+              by:S.ui.person, sess:coScope(person).sess});
       toast('انجام شد — یک منفی کم شد');
     }
     render();
   });
 
   const btn = document.getElementById('btnCheckout');
-  const stamp = document.getElementById('coStamp');
-  if(!started){
-    btn.disabled = true; btn.textContent = 'اول چک‌این کن'; stamp.innerHTML = '';
-  }else if(done){
-    const miss = sessionLogs(cur).filter(l => l.type==='neg').length;
+  const stampEl = document.getElementById('coStamp');
+  if(done){
+    const miss = scopeLogs(cur).filter(l => l.type==='neg').length;
     btn.disabled = true; btn.textContent = 'چک‌اوت این نوبت ثبت شد';
-    stamp.innerHTML = `<div class="costamp ${miss?'miss':''}">
+    stampEl.innerHTML = `<div class="costamp ${miss?'miss':''}">
       🚪 چک‌اوت <b>${esc(cur)}</b> — ${stampLong(done.ts)}<br>
       ${miss ? `${miss} مورد انجام‌نشده ماند و ${miss} امتیاز منفی ثبت شد.` : 'همه چیز انجام شده بود — بدون امتیاز منفی 🎉'}
       <div class="row" style="margin-top:9px"><button class="btn sm" id="btnCoUndo">لغو چک‌اوت</button></div></div>`;
@@ -780,32 +814,40 @@ function renderCheckout(){
   }else{
     btn.disabled = false;
     btn.textContent = pending ? `🚪 ثبت چک‌اوت — ${pending} امتیاز منفی` : '🚪 ثبت چک‌اوت بدون منفی';
-    stamp.innerHTML = '';
+    stampEl.innerHTML = sc.open
+      ? `<p class="hint" style="margin:9px 0 0">این چک‌اوت به چک‌این <b>${stamp(sc.start)}</b> بسته می‌شود.</p>`
+      : `<p class="hint" style="margin:9px 0 0">⚠️ <b>${esc(cur)}</b> نوبت بازی ندارد. چک‌اوت ثبت می‌شود ولی به هیچ چک‌اینی بسته نمی‌شود.</p>`;
   }
 }
 
-function registerCheckout(){
+async function registerCheckout(){
   const person = coPerson();
-  if(!sessionStart(person)){ toast('اول چک‌این کن'); return; }
   if(coRegistered(person)){ toast('چک‌اوت این نوبت قبلاً ثبت شده'); return; }
+  const sc = coScope(person);
   const cleared = coCleared(person);
   const missed = S.neg.filter(t => !cleared[t.id]);
-  const msg = missed.length
-    ? `${missed.length} مورد انجام نشده:\n${missed.map(t => '• ' + t.title).join('\n')}\n\nبرای هرکدام یک امتیاز منفی برای ${person} ثبت می‌شود. چک‌اوت ثبت شود؟`
-    : `همهٔ موارد انجام شده. چک‌اوت ${person} ثبت شود؟`;
-  if(!confirm(msg)) return;
-  missed.forEach(t => addLog({type:'neg', person, taskId:t.id, code:t.code||t.id, title:t.title, icon:t.icon, by:S.ui.person}));
-  addLog({type:'checkout', person, note: missed.length ? `${missed.length} مورد انجام‌نشده` : 'کامل', by:S.ui.person});
+  const head = sc.open
+    ? `چک‌اوت ${person} برای چک‌اینِ ${stamp(sc.start)} ثبت شود؟`
+    : `${person} نوبت بازی ندارد — چک‌اوت بدون چک‌این ثبت می‌شود. ادامه؟`;
+  const body = missed.length
+    ? `${head}\n\n${missed.length} مورد انجام نشده و برای هرکدام یک امتیاز منفی ثبت می‌شود:\n`
+      + missed.map(t => '• ' + t.title).join('\n')
+    : `${head}\n\nهمهٔ موارد انجام شده — بدون امتیاز منفی.`;
+  if(!await ask(body, {title:'ثبت چک‌اوت', ok:'ثبت چک‌اوت', danger: !!missed.length})) return;
+  missed.forEach(t => addLog({type:'neg', person, taskId:t.id, code:t.code||t.id, title:t.title,
+                              icon:t.icon, by:S.ui.person, sess:sc.sess}));
+  addLog({type:'checkout', person, by:S.ui.person, sess:sc.sess,
+          note: missed.length ? `${missed.length} مورد انجام‌نشده` : 'کامل'});
   render();
   toast(missed.length ? `چک‌اوت ثبت شد — ${missed.length} امتیاز منفی` : 'چک‌اوت کامل ثبت شد 🎉');
 }
 
-function undoCheckout(){
+async function undoCheckout(){
   const person = coPerson();
-  const done = coRegistered(person);
-  if(!done) return;
-  if(!confirm('چک‌اوت لغو شود؟ امتیازهای منفی همین نوبت هم برداشته می‌شوند.')) return;
-  sessionLogs(person).forEach(l => { if(l.type==='neg' || l.type==='checkout') dropLog(l); });
+  if(!coRegistered(person)) return;
+  if(!await ask('چک‌اوت لغو شود؟ امتیازهای منفی همین نوبت هم برداشته می‌شوند.',
+                {ok:'لغو چک‌اوت', danger:true})) return;
+  scopeLogs(person).forEach(l => { if(l.type==='neg' || l.type==='checkout') dropLog(l); });
   save(); render(); toast('چک‌اوت لغو شد');
 }
 
@@ -825,22 +867,27 @@ function rangeFilter(){
   return l => l.ts >= from;
 }
 
-/* a session is one check-in through its checkout */
+/* One session per check-in. Records join by the check-in they reference,
+   so a chore logged days later still lands in the right visit. */
 function buildSessions(person){
   const out = [];
   (person ? [person] : S.people).forEach(p => {
     const ls = logsOf(p).sort((a,b)=>a.ts-b.ts);
-    let cur = null;
-    const close = () => { if(cur){ out.push(cur); cur = null; } };
+    const map = {};
+    const orphan = {person:p, id:'', start:null, end:null, pos:[], neg:[], ok:[], orphan:true};
     ls.forEach(l => {
-      if(l.type==='checkin'){ close(); cur = {person:p, start:l.ts, end:null, pos:[], neg:[], ok:[]}; return; }
-      if(!cur) cur = {person:p, start:null, end:null, pos:[], neg:[], ok:[], orphan:true};
-      if(l.type==='pos') cur.pos.push(l);
-      else if(l.type==='neg') cur.neg.push(l);
-      else if(l.type==='co_ok') cur.ok.push(l);
-      else if(l.type==='checkout') cur.end = l.ts;
+      if(l.type==='checkin'){
+        map[l.id] = {person:p, id:l.id, start:l.ts, end:null, pos:[], neg:[], ok:[]};
+        return;
+      }
+      const target = map[sessionOf(l)] || orphan;
+      if(l.type==='pos') target.pos.push(l);
+      else if(l.type==='neg') target.neg.push(l);
+      else if(l.type==='co_ok') target.ok.push(l);
+      else if(l.type==='checkout') target.end = l.ts;
     });
-    close();
+    Object.keys(map).forEach(k => out.push(map[k]));
+    if(orphan.pos.length || orphan.neg.length || orphan.ok.length || orphan.end) out.push(orphan);
   });
   return out.sort((a,b) => (b.start||b.end||0) - (a.start||a.end||0));
 }
@@ -995,7 +1042,7 @@ function renderPersonPanel(p){
           <tbody>${rows.length ? rows.map(x => {
             const mins = (x.start && x.end) ? Math.max(0, Math.round((x.end - x.start)/60000)) : null;
             return `<tr>
-              <td class="mono">${x.start ? dayKey(x.start) : '—'}</td>
+              <td class="mono">${x.start ? dayKey(x.start) : '<span class="badge warn">بدون چک‌این</span>'}</td>
               <td class="mono">${x.start ? timeStr(x.start) : '—'}</td>
               <td class="mono">${x.end ? timeStr(x.end) : '<span class="badge warn">باز</span>'}</td>
               <td class="mono">${mins==null ? '—' : (mins >= 60 ? Math.floor(mins/60)+'س '+(mins%60)+'د' : mins+'د')}</td>
@@ -1057,9 +1104,11 @@ function logRow(l){
 
 function bindLogRows(root){
   root.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editLog(b.dataset.edit));
-  root.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+  root.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
     const l = S.logs.find(x => x.id===b.dataset.del);
-    if(!l || !confirm('این ثبت حذف شود؟')) return;
+    if(!l) return;
+    if(!await ask(`این ثبت حذف شود؟\n${l.person} — ${l.title || typeName(l.type)}\n${stampLong(l.ts)}`,
+                  {ok:'حذف کن', danger:true})) return;
     dropLog(l); save(); render(); toast('حذف شد');
   });
 }
@@ -1075,8 +1124,8 @@ function renderSettings(){
         <button class="btn sm ghost" data-ren="${esc(p)}">تغییر نام</button>
         <button class="btn sm danger" data-rmp="${esc(p)}">حذف</button>
       </div></li>`).join('');
-  pa.querySelectorAll('[data-ren]').forEach(b => b.onclick = () => {
-    const old = b.dataset.ren, nn = prompt('نام جدید:', old);
+  pa.querySelectorAll('[data-ren]').forEach(b => b.onclick = async () => {
+    const old = b.dataset.ren, nn = await askText('نام جدید:', old, 'تغییر نام');
     if(!nn || !nn.trim() || nn===old) return;
     const name = nn.trim();
     S.people = S.people.map(x => x===old ? name : x);
@@ -1084,10 +1133,10 @@ function renderSettings(){
     if(S.ui.person===old) S.ui.person = name;
     markConfig(); save(); render(); toast('نام تغییر کرد');
   });
-  pa.querySelectorAll('[data-rmp]').forEach(b => b.onclick = () => {
+  pa.querySelectorAll('[data-rmp]').forEach(b => b.onclick = async () => {
     const p = b.dataset.rmp;
     if(S.people.length<=1){ toast('حداقل یک نفر باید بماند'); return; }
-    if(!confirm(`${p} حذف شود؟ ثبت‌هایش باقی می‌مانند.`)) return;
+    if(!await ask(`${p} از لیست حذف شود؟ ثبت‌هایش باقی می‌مانند.`, {ok:'حذف کن', danger:true})) return;
     S.people = S.people.filter(x => x!==p);
     if(S.ui.person===p) S.ui.person = S.people[0];
     markConfig(); save(); render();
@@ -1118,8 +1167,8 @@ function taskAdminRow(t, type){
 function bindTaskAdmin(rootId, type){
   const root = document.getElementById(rootId);
   root.querySelectorAll('[data-et]').forEach(b => b.onclick = () => editTask(type, b.dataset.et));
-  root.querySelectorAll('[data-dt]').forEach(b => b.onclick = () => {
-    if(!confirm('این کار حذف شود؟ ثبت‌های قبلی در تاریخچه می‌مانند.')) return;
+  root.querySelectorAll('[data-dt]').forEach(b => b.onclick = async () => {
+    if(!await ask('این کار حذف شود؟ ثبت‌های قبلی در تاریخچه می‌مانند.', {ok:'حذف کن', danger:true})) return;
     const id = b.dataset.dt;
     if(type==='neg') S.neg = S.neg.filter(t => t.id!==id); else S.pos = S.pos.filter(t => t.id!==id);
     markConfig(); save(); render(); toast('حذف شد');
@@ -1128,12 +1177,57 @@ function bindTaskAdmin(rootId, type){
 
 /* ---------------- modal ---------------- */
 
+let dlgResolve = null;
+
+/* A sandboxed host (the claude.ai viewer) ignores window.confirm/alert/prompt
+   outright, so every question the app asks is drawn in-page instead. */
+function dialog(title, html, buttons){
+  return new Promise(resolve => {
+    dlgResolve = resolve;
+    openModal(title, html + `<div class="row dlgrow">${buttons.map((b, i) =>
+      `<button class="btn ${b.cls||''}" data-dlg="${i}">${esc(b.label)}</button>`).join('')}</div>`);
+    document.querySelectorAll('[data-dlg]').forEach(el => el.onclick = () => {
+      closeModal(buttons[+el.dataset.dlg].value);
+    });
+  });
+}
+function escLines(t){ return esc(t).replace(/\n/g, '<br>'); }
+function ask(msg, opts){
+  opts = opts || {};
+  return dialog(opts.title || 'تأیید', `<div class="dlgmsg">${escLines(msg)}</div>`, [
+    {label: opts.ok || 'تأیید', cls: opts.danger ? 'danger' : 'primary', value: true},
+    {label: opts.cancel || 'انصراف', cls: 'ghost', value: false}
+  ]);
+}
+function say(msg, title){
+  return dialog(title || 'پیام', `<div class="dlgmsg">${escLines(msg)}</div>`,
+    [{label: 'باشه', cls: 'primary', value: true}]);
+}
+function askText(label, value, title){
+  return new Promise(resolve => {
+    dlgResolve = resolve;
+    openModal(title || 'ویرایش', `
+      <label class="f"><span>${esc(label)}</span>
+        <input type="text" id="dlgIn" value="${esc(value||'')}"></label>
+      <div class="row"><button class="btn primary" id="dlgOk">ذخیره</button>
+        <button class="btn ghost" id="dlgNo">انصراف</button></div>`);
+    const inp = document.getElementById('dlgIn');
+    inp.focus(); inp.select();
+    document.getElementById('dlgOk').onclick = () => closeModal(inp.value);
+    document.getElementById('dlgNo').onclick = () => closeModal(null);
+    inp.onkeydown = e => { if(e.key === 'Enter') closeModal(inp.value); };
+  });
+}
+
 function openModal(title, html){
   document.getElementById('mTitle').textContent = title;
   document.getElementById('mBody').innerHTML = html;
   document.getElementById('modal').classList.add('on');
 }
-function closeModal(){ document.getElementById('modal').classList.remove('on'); }
+function closeModal(value){
+  document.getElementById('modal').classList.remove('on');
+  if(dlgResolve){ const r = dlgResolve; dlgResolve = null; r(value === undefined ? false : value); }
+}
 document.getElementById('mClose').onclick = closeModal;
 document.getElementById('modal').onclick = e => { if(e.target.id==='modal') closeModal(); };
 
@@ -1171,6 +1265,7 @@ function editLog(id){
       let t = task(type, kEl ? kEl.value : l.taskId) || (type==='neg'?S.neg:S.pos)[0];
       l.type=type; l.taskId=t.id; l.code=t.code||t.id; l.title=t.title; l.icon=t.icon;
     }
+    l.sess = l.type==='checkin' ? l.id : sessionIdFor(l.person, l.ts);   /* date decides the visit */
     touch(l); save(); closeModal(); render(); toast('ذخیره شد');
   };
 }
@@ -1382,16 +1477,20 @@ ${sheets.map((s,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlfo
 
 function historyRows(){
   const head = ['ردیف','تاریخ میلادی','ساعت','روز هفته','نام','نوع','کد کار','عنوان کار','توضیح کار',
-                'امتیاز مثبت','امتیاز منفی','یادداشت','ثبت‌کننده','شناسهٔ ثبت'];
+                'امتیاز مثبت','امتیاز منفی','نوبت (چک‌این)','یادداشت','ثبت‌کننده','شناسهٔ ثبت','شناسهٔ نوبت'];
   const rows = [head];
+  const ciAt = {};
+  L().forEach(l => { if(l.type==='checkin') ciAt[l.id] = l.ts; });
   L().slice().sort((a,b)=>a.ts-b.ts).forEach((l, i) => {
     const def = l.taskId ? (task('pos', l.taskId) || task('neg', l.taskId)) : null;
+    const sid = sessionOf(l);
     rows.push([
       i+1, dayKey(l.ts), timeStr(l.ts), weekday(l.ts), l.person, typeName(l.type),
       l.code || '', l.title || (l.type==='checkin' ? 'ورود به خانه' : l.type==='checkout' ? 'چک‌اوت' : ''),
       def ? (def.desc || '') : '',
       l.type==='pos' ? 1 : 0, l.type==='neg' ? 1 : 0,
-      l.note || '', l.by || '', l.id
+      ciAt[sid] ? stamp(ciAt[sid]) : 'بدون چک‌این',
+      l.note || '', l.by || '', l.id, sid || ''
     ]);
   });
   return rows;
@@ -1404,7 +1503,7 @@ function sessionRows(){
     const mins = (x.start && x.end) ? Math.max(0, Math.round((x.end - x.start)/60000)) : '';
     rows.push([
       x.person,
-      x.start ? dayKey(x.start) : (x.end ? dayKey(x.end) : ''),
+      x.start ? dayKey(x.start) : (x.end ? dayKey(x.end) + ' (بدون چک‌این)' : 'بدون چک‌این'),
       x.start ? timeStr(x.start) : '',
       x.end ? timeStr(x.end) : '',
       mins === '' ? '' : mins,
@@ -1498,7 +1597,7 @@ async function exportExcel(){
   if(!L().length){ toast('هنوز چیزی ثبت نشده'); return; }
   const hist = historyRows();
   const book = buildXlsx([
-    {name:'تاریخچه', rows:hist, widths:[6,13,7,10,10,16,8,26,40,10,10,20,10,14]},
+    {name:'تاریخچه', rows:hist, widths:[6,13,7,10,10,16,8,26,40,10,10,18,20,10,14,14]},
     {name:'نوبت‌ها', rows:sessionRows(), widths:[10,13,10,10,11,10,10,40,40,17]},
     {name:'خلاصهٔ افراد', rows:scoreRows(), widths:[12,11,11,12,12,10,12,15,18,18]},
     {name:'روزانه', rows:dailyRows(), widths:[13,12,11,11,9,9]},
@@ -1557,15 +1656,15 @@ document.getElementById('btnImport').onclick = () => document.getElementById('fi
 document.getElementById('fileImport').onchange = e => {
   const f = e.target.files[0]; if(!f) return;
   const r = new FileReader();
-  r.onload = () => {
+  r.onload = async () => {
     try{
       const j = JSON.parse(r.result);
       const d = j.data || j;
       if(!d || !Array.isArray(d.logs)) throw new Error('ساختار نامعتبر');
-      if(!confirm('اطلاعات فعلی با فایل پشتیبان جایگزین شود؟')) return;
+      if(!await ask('اطلاعات فعلی با فایل پشتیبان جایگزین شود؟', {ok:'جایگزین کن', danger:true})) return;
       localStorage.setItem(KEY, JSON.stringify(d));
       S = load(); render(); toast('بازیابی شد');
-    }catch(err){ alert('فایل معتبر نیست: ' + err.message); }
+    }catch(err){ await say('فایل معتبر نیست: ' + err.message, 'خطا'); }
     finally{ e.target.value = ''; }
   };
   r.readAsText(f);
@@ -1575,7 +1674,7 @@ async function resetFlow(fullReset){
   const what = fullReset
     ? 'ریست کامل: همهٔ ثبت‌ها، افراد و کارها به حالت اولیه برمی‌گردند.'
     : 'همهٔ ثبت‌ها (ورودها و امتیازها) پاک می‌شوند.';
-  if(!confirm(what + '\nابتدا فایل پشتیبان ذخیره می‌شود. ادامه؟')) return;
+  if(!await ask(what + '\n\nابتدا فایل پشتیبان ذخیره می‌شود. ادامه؟', {ok:'ادامه', danger:true})) return;
 
   const r = await saveBackupFile();      /* backup ALWAYS happens before wiping */
   openModal('پشتیبان — تأیید پاک کردن', `
@@ -1613,22 +1712,24 @@ document.getElementById('tabs').onclick = e => {
   S.ui.tab = b.dataset.tab; save();
 };
 
-document.getElementById('btnCheckin').onclick = () => {
+document.getElementById('btnCheckin').onclick = async () => {
   const p = S.ui.person, g = gateState(p);
-  if(g.checkedIn && !confirm(`${p} امروز در ${timeStr(g.ci.ts)} چک‌این کرده. ورود جدید ثبت شود؟`)) return;
+  if(g.inside && !await ask(
+      `${p} از ${stamp(g.sess.ts)} نوبت باز دارد.\n\nیک چک‌این جدید ثبت شود؟ نوبت قبلی بدون چک‌اوت باقی می‌ماند.`,
+      {title:'چک‌این دوباره', ok:'بله، چک‌این جدید'})) return;
   addLog({type:'checkin', person:p});
   render(); toast(`${p} وارد شد — ${stamp(Date.now())}`);
   document.querySelector('.tab[data-tab="tasks"]').click();
 };
 
-document.getElementById('btnGate').onclick = () => {
+document.getElementById('btnGate').onclick = async () => {
   const p = S.ui.person, g = gateState(p);
   if(g.ok){
-    if(!confirm('تأیید «آب روی home» برداشته شود؟')) return;
+    if(!await ask('تأیید «آب روی home» برای امروز برداشته شود؟', {ok:'بردار', danger:true})) return;
     dropLog(g.home); save(); toast('تأیید برداشته شد');
   }else{
-    if(!g.checkedIn){ toast('اول چک‌این کن'); document.querySelector('.tab[data-tab="checkin"]').click(); return; }
-    if(!confirm('مطمئنی آب را روی home گذاشتی؟\n\nبا تأیید، بقیهٔ کارهای مثبت برایت فعال می‌شود.')) return;
+    if(!await ask('مطمئنی آب را روی home گذاشتی؟\n\nبا تأیید، ثبت کارهای مثبت برایت باز می‌شود.',
+                  {title:'تأیید آب روی home', ok:'بله، انجام دادم'})) return;
     const t = S.pos.find(x => x.id===GATE_ID) || {code:'HOME', icon:'💧', title:'آب را روی home بگذار'};
     addLog({type:'pos', person:p, taskId:GATE_ID, code:t.code||'HOME', title:t.title, icon:t.icon, by:p});
     toast('ثبت شد — حالا بقیهٔ کارها فعال است');
@@ -1683,7 +1784,7 @@ function queueSync(){
 function wireLog(l){
   return {id:l.id, ts:l.ts, person:l.person, type:l.type, taskId:l.taskId||'',
           code:l.code||'', title:l.title||'', icon:l.icon||'', note:l.note||'',
-          by:l.by||'', deleted:!!l.deleted};
+          by:l.by||'', sess:sessionOf(l), deleted:!!l.deleted};
 }
 
 async function doSync(quiet, opts){
@@ -1780,7 +1881,8 @@ function renderSync(){
 document.getElementById('btnSyncSave').onclick = async () => {
   const u = document.getElementById('syncUrl').value.trim();
   const t = document.getElementById('syncToken').value.trim();
-  if(u && !/^https:\/\/script\.google\.com\/.*\/exec/.test(u) && !confirm('این آدرس شبیه آدرس Apps Script نیست. باز هم ذخیره شود؟')) return;
+  if(u && !/^https:\/\/script\.google\.com\/.*\/exec/.test(u)
+       && !await ask('این آدرس شبیه آدرس Apps Script نیست. باز هم ذخیره شود؟')) return;
   SY = {url:u, token:t}; saveSync();
   if(!u){ renderSync(); toast('اتصال قطع شد'); return; }
   S.logs.forEach(l => l.dirty = true);     /* everything logged on this phone so far */
@@ -1798,8 +1900,8 @@ document.getElementById('btnSyncNow').onclick = async () => {
   const r = await doSync();
   if(r.ok) toast('همگام شد');
 };
-document.getElementById('btnSyncOff').onclick = () => {
-  if(!confirm('اتصال قطع شود؟ اطلاعات روی این گوشی باقی می‌ماند.')) return;
+document.getElementById('btnSyncOff').onclick = async () => {
+  if(!await ask('اتصال قطع شود؟ اطلاعات روی این گوشی باقی می‌ماند.', {ok:'قطع کن', danger:true})) return;
   SY = {url:'', token:''}; saveSync(); renderSync(); toast('اتصال قطع شد');
 };
 document.getElementById('btnSyncLink').onclick = async () => {
