@@ -19,13 +19,53 @@ function makeSheet(name){
   const at = (r, c) => { while (cells.length < r) cells.push([]); const row = cells[r-1]; while (row.length < c) row.push(''); return row; };
   const sheet = {
     name, cells,
+    widths: {}, hidden: {}, bandings: [],
+    fmt: { wrap: [], valign: [], halign: [], fontSize: null, frozen: 0, rtl: false },
     getName(){ return name; },
+    getMaxRows(){ return Math.max(cells.length, 1); },
+    getMaxColumns(){ return Math.max.apply(null, [1].concat(cells.map(r => r.length))); },
+    getLastColumn(){
+      let last = 0;
+      cells.forEach(r => r.forEach((v, i) => { if (v !== '' && v != null) last = Math.max(last, i + 1); }));
+      return last;
+    },
+    /* width follows the longest text in the column, the way autofit does */
+    autoResizeColumns(start, count){
+      for (let c = start; c < start + count; c++){
+        let widest = 0;
+        cells.forEach(r => { const v = r[c-1]; if (v != null) widest = Math.max(widest, String(v).length); });
+        sheet.widths[c] = Math.max(24, widest * 7 + 12);
+      }
+      return sheet;
+    },
+    getColumnWidth(c){ return sheet.widths[c] || 100; },
+    setColumnWidth(c, w){ sheet.widths[c] = w; return sheet; },
+    hideColumns(c, n){ for (let i = 0; i < (n || 1); i++) sheet.hidden[c + i] = true; return sheet; },
+    showColumns(c, n){ for (let i = 0; i < (n || 1); i++) delete sheet.hidden[c + i]; return sheet; },
+    getBandings(){ return sheet.bandings.slice(); },
+    clearContents(){ cells.length = 0; return sheet; },
     getLastRow(){ let last = 0; cells.forEach((r, i) => { if (r && r.some(c => c !== '' && c != null)) last = i + 1; }); return last; },
     getRange(row, col, nr = 1, nc = 1){
-      return {
+      const range = {
         setValues(vals){
           vals.forEach((rv, i) => rv.forEach((v, j) => { const r = at(row + i, col + j); r[col + j - 1] = v; }));
-          return this;
+          return range;
+        },
+        setWrapStrategy(v){ sheet.fmt.wrap.push({ row, col, nr, nc, v }); return range; },
+        setVerticalAlignment(v){ sheet.fmt.valign.push(v); return range; },
+        setHorizontalAlignment(v){ sheet.fmt.halign.push(v); return range; },
+        setFontSize(v){ sheet.fmt.fontSize = v; return range; },
+        applyRowBanding(theme, header, footer){
+          const b = {
+            theme, header, footer,
+            setHeaderRowColor(c){ b.headerColor = c; return b; },
+            setFirstRowColor(c){ b.first = c; return b; },
+            setSecondRowColor(c){ b.second = c; return b; },
+            setFooterRowColor(c){ b.footerColor = c; return b; },
+            remove(){ sheet.bandings = sheet.bandings.filter(x => x !== b); }
+          };
+          sheet.bandings.push(b);
+          return b;
         },
         getValues(){
           const out = [];
@@ -40,13 +80,13 @@ function makeSheet(name){
           }
           return out;
         },
-        setFontWeight(){ return this; }, setBackground(){ return this; }, setFontColor(){ return this; }
+        setFontWeight(){ return range; }, setBackground(){ return range; }, setFontColor(){ return range; }
       };
+      return range;
     },
     clear(){ cells.length = 0; return sheet; },
-    setFrozenRows(){ return sheet; },
-    autoResizeColumns(){ return sheet; },
-    setRightToLeft(){ return sheet; }
+    setFrozenRows(n){ sheet.fmt.frozen = n; return sheet; },
+    setRightToLeft(v){ sheet.fmt.rtl = v !== false; return sheet; }
   };
   return sheet;
 }
@@ -66,7 +106,9 @@ function createGas(codePath){
       getActiveSpreadsheet: () => ss,
       getActive: () => ss,
       flush: () => {},
-      getUi: () => { throw new Error('no UI in this context'); }
+      getUi: () => { throw new Error('no UI in this context'); },
+      WrapStrategy: { WRAP: 'WRAP', OVERFLOW: 'OVERFLOW', CLIP: 'CLIP' },
+      BandingTheme: { LIGHT_GREY: 'LIGHT_GREY' }
     },
     Logger: { log: () => {} },
     PropertiesService: { getScriptProperties: () => ({
@@ -92,6 +134,7 @@ function createGas(codePath){
       return JSON.parse(res.getContent());
     },
     sheetNames(){ return [...sheets.keys()]; },
+    sheet(name){ return sheets.get(name) || null; },
     rows(name){
       const s = sheets.get(name);
       if (!s) return null;

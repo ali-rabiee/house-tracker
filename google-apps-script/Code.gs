@@ -25,6 +25,19 @@ var C = {id:0, date:1, time:2, wd:3, person:4, typeFa:5, code:6, title:7, note:8
 
 var WD = ['یکشنبه','دوشنبه','سه‌شنبه','چهارشنبه','پنجشنبه','جمعه','شنبه'];
 
+/** ستون‌های فنی برگهٔ logs — پنهان می‌شوند تا جدول خوانا بماند */
+var TECH = [C.type, C.taskId, C.icon, C.ts, C.rev, C.deleted, C.sess];
+
+var STYLE = {
+  headerBg: '#8A5A34',
+  headerFg: '#FFF8EE',
+  bandBg:   '#FAF5EC',
+  minWidth: 72,
+  maxWidth: 320,       /* جلوی ستون‌های عریضِ بی‌انتها را می‌گیرد */
+  padding:  18,
+  bigSheet: 3000       /* از این تعداد سطر بیشتر، تنظیم خودکار عرض انجام نمی‌شود */
+};
+
 
 /* ================================================================
    ⬇️ این تابع را اجرا کن (setup) — اولین گزینهٔ منوی Run همین است
@@ -36,6 +49,7 @@ function setup(){
   logsSheet();
   configSheet();
   buildReports();
+  tidy();
   SpreadsheetApp.flush();                  /* تا تغییرات فوراً در شیت دیده شود */
   var names = [];
   ss.getSheets().forEach(function(sh){ names.push(sh.getName()); });
@@ -53,6 +67,19 @@ function rebuild(){
   return 'OK';
 }
 
+/** عرض ستون‌ها و قالب همهٔ برگه‌ها را دوباره مرتب می‌کند. */
+function tidy(){
+  var ss = book();
+  styleSheet(logsSheet(), HEAD.length, TECH);
+  ['نوبت‌ها','خلاصهٔ افراد','روزانه','آمار کارها'].forEach(function(name){
+    var sh = ss.getSheetByName(name);
+    if(sh) styleSheet(sh, Math.max(sh.getLastColumn(), 1));
+  });
+  SpreadsheetApp.flush();
+  try{ ss.toast('ستون‌ها مرتب شد', 'مراقبت از خانه', 6); }catch(err){}
+  return 'OK';
+}
+
 /** منوی «مراقبت از خانه» را به خود شیت اضافه می‌کند (بعد از refresh دیده می‌شود). */
 function onOpen(){
   try{
@@ -60,6 +87,8 @@ function onOpen(){
       .createMenu('مراقبت از خانه')
       .addItem('ساخت / بازسازی برگه‌ها', 'setup')
       .addItem('بازسازی گزارش‌ها', 'rebuild')
+      .addItem('مرتب کردن ستون‌ها', 'tidy')
+      .addItem('نمایش ستون‌های فنی', 'showTechColumns')
       .addToUi();
   }catch(err){}
 }
@@ -279,6 +308,71 @@ function readConfig(since){
   catch(err){ return null; }
 }
 
+/* ---------------- خوانا و مرتب نگه داشتن برگه‌ها ---------------- */
+
+/** سطر عنوان، شکستن متن، رنگ‌بندی یک‌درمیان و عرض ستون‌ها بر اساس محتوا */
+function styleSheet(sh, cols, hideCols){
+  try{
+    var last = Math.max(sh.getLastRow(), 1);
+    sh.setRightToLeft(true);
+    sh.setFrozenRows(1);
+
+    /* هیچ متنی از باکس خودش بیرون نمی‌زند: به‌جای سرریز، در همان خانه می‌شکند */
+    sh.getRange(1, 1, last, cols)
+      .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP)
+      .setVerticalAlignment('middle');
+
+    sh.getRange(1, 1, 1, cols)
+      .setFontWeight('bold')
+      .setBackground(STYLE.headerBg)
+      .setFontColor(STYLE.headerFg)
+      .setHorizontalAlignment('center');
+
+    bandRows(sh, last, cols);
+    fitColumns(sh, cols, hideCols);
+  }catch(err){
+    Logger.log('styleSheet(' + sh.getName() + '): ' + err);   /* قالب‌بندی هرگز نباید جلوی ذخیرهٔ داده را بگیرد */
+  }
+}
+
+/** رنگ یک‌درمیان سطرها با همان پالت کرم/قهوه‌ای اپ */
+function bandRows(sh, last, cols){
+  try{
+    var old = sh.getBandings();
+    for(var i = 0; i < old.length; i++) old[i].remove();
+    if(last < 2) return;
+    var band = sh.getRange(1, 1, last, cols)
+      .applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, true, false);
+    band.setHeaderRowColor(STYLE.headerBg)
+        .setFirstRowColor('#FFFFFF')
+        .setSecondRowColor(STYLE.bandBg);
+  }catch(err){ Logger.log('bandRows: ' + err); }
+}
+
+/** عرض هر ستون به اندازهٔ محتوایش، ولی محدود بین کمینه و بیشینه */
+function fitColumns(sh, cols, hideCols){
+  if(sh.getLastRow() > STYLE.bigSheet) return;      /* روی برگه‌های خیلی بزرگ وقت‌گیر است */
+  sh.showColumns(1, cols);                          /* پنهان‌ها هم اندازه‌گیری شوند */
+  sh.autoResizeColumns(1, cols);
+  for(var c = 1; c <= cols; c++){
+    var w = sh.getColumnWidth(c);
+    var want = Math.max(STYLE.minWidth, Math.min(STYLE.maxWidth, w + STYLE.padding));
+    if(want !== w) sh.setColumnWidth(c, want);
+  }
+  if(hideCols && hideCols.length){
+    for(var i = 0; i < hideCols.length; i++) sh.hideColumns(hideCols[i] + 1);
+  }
+}
+
+/** ستون‌های فنی را دوباره نشان می‌دهد (از منوی خود شیت) */
+function showTechColumns(){
+  var sh = logsSheet();
+  sh.showColumns(1, HEAD.length);
+  SpreadsheetApp.flush();
+  try{ book().toast('ستون‌های فنی نمایش داده شد', 'مراقبت از خانه', 6); }catch(err){}
+  return 'OK';
+}
+
 /* ---------------- برگه‌های گزارش (خودکار ساخته می‌شوند) ---------------- */
 /* هر بار که چیزی ثبت شود، این چهار برگه از روی logs بازنویسی می‌شوند.
    دستی در آن‌ها چیزی ننویس — پاک می‌شود. */
@@ -350,6 +444,8 @@ function buildReports(){
     if(!tasks[k]) tasks[k] = {code: l.code || k, title: l.title || k, type: l.type, per: {}};
     tasks[k].per[l.person] = (tasks[k].per[l.person] || 0) + 1;
   });
+  styleSheet(logsSheet(), HEAD.length, TECH);
+
   writeReport('آمار کارها', ['کد','عنوان','نوع'].concat(people).concat(['مجموع']),
     Object.keys(tasks).map(function(k){
       var t = tasks[k], sum = 0;
@@ -419,10 +515,9 @@ function nearestCheckin(mine, ts){
 
 function writeReport(name, head, rows){
   var ss = book(), sh = ss.getSheetByName(name);
-  if(!sh){ sh = ss.insertSheet(name); sh.setRightToLeft(true); }
-  sh.clear();
-  sh.getRange(1, 1, 1, head.length).setValues([head])
-    .setFontWeight('bold').setBackground('#8A5A34').setFontColor('#FFF8EE');
+  if(!sh) sh = ss.insertSheet(name);
+  sh.clearContents();                    /* محتوا پاک می‌شود، قالب‌بندی می‌ماند */
+  sh.getRange(1, 1, 1, head.length).setValues([head]);
   if(rows.length){
     var width = head.length;
     var padded = rows.map(function(r){
@@ -432,8 +527,7 @@ function writeReport(name, head, rows){
     });
     sh.getRange(2, 1, padded.length, width).setValues(padded);
   }
-  sh.setFrozenRows(1);
-  sh.autoResizeColumns(1, head.length);
+  styleSheet(sh, head.length);
 }
 
 /* ---------------- ابزار دستی ---------------- */

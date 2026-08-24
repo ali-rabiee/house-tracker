@@ -53,4 +53,50 @@ ok('a chore batched with its check-in still names it',
    String(logs.find(r => r[0] === 'p1')[col]));
 const sess = g2.rows('نوبت‌ها').find(r => r[0] === 'فاطیما');
 ok('the visit is reported as one multi-day session', Number(sess[4]) > 4000, 'minutes=' + sess[4]);
+
+
+/* ---- readable sheets: nothing overflows, widths follow the content ---- */
+const g3 = createGas(FILE);
+const now = Date.now();
+const long = 'یک یادداشت خیلی طولانی که اگر ستون کوتاه بماند از باکس خودش بیرون می‌زند و جدول را به‌هم می‌ریزد';
+g3.post({ token: 'khaneh-1404', since: 0, logs: [
+  { id: 'k1', ts: now - 86400000, person: 'فاطیما', type: 'checkin', sess: 'k1' },
+  { id: 'k2', ts: now, person: 'فاطیما', type: 'pos', taskId: 'P1', code: 'P1',
+    title: 'آب دادن به گل‌ها', note: long, sess: 'k1' },
+  { id: 'k3', ts: now + 1, person: 'فاطیما', type: 'checkout', sess: 'k1' }
+], config: { people: ['علی', 'فاطیما', 'محمد'], pos: [], neg: [] } });
+
+const REPORTS = ['نوبت‌ها', 'خلاصهٔ افراد', 'روزانه', 'آمار کارها'];
+for (const name of ['logs'].concat(REPORTS)) {
+  const sh = g3.sheet(name);
+  const cols = (g3.rows(name)[0] || []).filter(c => c !== '').length;
+  const wrapped = sh.fmt.wrap.some(w => w.v === 'WRAP' && w.nc >= cols);
+  const widths = Object.keys(sh.widths).map(k => sh.widths[k]);
+  const inRange = widths.length >= cols && widths.every(w => w >= 72 && w <= 320);
+  ok(`«${name}» wraps text and never overflows`, wrapped);
+  ok(`«${name}» column widths sized and capped`, inRange,
+     'min=' + Math.min.apply(null, widths) + ' max=' + Math.max.apply(null, widths));
+  ok(`«${name}» header frozen and RTL`, sh.fmt.frozen === 1 && sh.fmt.rtl);
+  ok(`«${name}» rows banded for readability`, sh.bandings.length === 1);
+}
+
+/* the long note must have widened its own column, up to the cap */
+const logs3 = g3.rows('logs');
+const noteCol = logs3[0].indexOf('یادداشت') + 1;
+ok('a long note widens its column to the cap', g3.sheet('logs').widths[noteCol] === 320,
+   'width=' + g3.sheet('logs').widths[noteCol]);
+const dateCol = logs3[0].indexOf('تاریخ') + 1;
+ok('a short column stays narrow', g3.sheet('logs').widths[dateCol] < 200,
+   'width=' + g3.sheet('logs').widths[dateCol]);
+
+/* machine columns are hidden on logs, and only there */
+const hiddenLogs = Object.keys(g3.sheet('logs').hidden).map(Number).sort((a, b) => a - b);
+ok('logs hides its technical columns', hiddenLogs.join(',') === '14,15,16,17,18,19,20', hiddenLogs.join(','));
+ok('reports hide nothing', REPORTS.every(n => Object.keys(g3.sheet(n).hidden).length === 0));
+ok('showTechColumns brings them back', (g3.run('showTechColumns'),
+   Object.keys(g3.sheet('logs').hidden).length === 0));
+
+/* rebuilding must not lose formatting or leave stale rows */
+g3.run('tidy');
+ok('tidy re-applies formatting', g3.sheet('نوبت‌ها').bandings.length === 1);
 done();
