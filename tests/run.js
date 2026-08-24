@@ -2,7 +2,7 @@
 const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 
-const SUITES = ['backend.test.js', 'app.test.js', 'sandbox.test.js', 'sync.test.js'];
+const SUITES = ['backend.test.js', 'app.test.js', 'sandbox.test.js', 'sync.test.js', 'live.test.js'];
 const only = process.argv[2];
 
 const server = spawn(process.execPath, [path.join(__dirname, 'server.js')], { stdio: 'inherit' });

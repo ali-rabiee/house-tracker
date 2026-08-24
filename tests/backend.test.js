@@ -6,6 +6,7 @@ const { createGas } = require('./gas-emu');
 const { ok, done } = require('./helpers');
 
 const FILE = path.join(__dirname, '..', 'google-apps-script', 'Code.gs');
+const BIN = 'حذف‌شده‌ها';
 const src = fs.readFileSync(FILE, 'utf8');
 
 /* Apps Script's Run button defaults to the first function in the file, so that
@@ -99,4 +100,63 @@ ok('showTechColumns brings them back', (g3.run('showTechColumns'),
 /* rebuilding must not lose formatting or leave stale rows */
 g3.run('tidy');
 ok('tidy re-applies formatting', g3.sheet('نوبت‌ها').bandings.length === 1);
+
+
+/* ---- deleting moves the row out of logs and into the recoverable bin ---- */
+const g4 = createGas(FILE);
+const base = Date.now();
+g4.post({ token: 'khaneh-1404', since: 0, logs: [
+  { id: 'd1', ts: base - 7200000, person: 'محمد', type: 'checkin', sess: 'd1' },
+  { id: 'd2', ts: base - 3600000, person: 'محمد', type: 'pos', taskId: 'P5', code: 'P5',
+    title: 'بیرون گذاشتن آشغال', icon: '🗑️', note: 'سطل حیاط', by: 'محمد', sess: 'd1' }
+]});
+const beforeRows = g4.rows('logs').length;
+const afterDelete = g4.post({ token: 'khaneh-1404', since: 0,
+  logs: [{ id: 'd2', ts: base - 3600000, person: 'محمد', type: 'pos', taskId: 'P5', code: 'P5',
+           title: 'بیرون گذاشتن آشغال', sess: 'd1', deleted: true }] });
+
+const liveIds = g4.rows('logs').slice(1).map(r => r[0]);
+ok('the deleted row leaves the logs sheet', !liveIds.includes('d2') && liveIds.includes('d1'),
+   'logs=' + liveIds.join(','));
+ok('logs shrank by exactly one row', g4.rows('logs').length === beforeRows - 1);
+
+const bin = g4.rows(BIN);
+const binHead = bin[0];
+const gone = bin.slice(1).find(r => r[0] === 'd2') || [];
+ok('the bin keeps it with the deletion date and weekday',
+   /^\d{4}-\d{2}-\d{2}$/.test(String(gone[binHead.indexOf('تاریخ حذف')])) &&
+   String(gone[binHead.indexOf('روز حذف')]).length > 2,
+   gone[binHead.indexOf('تاریخ حذف')] + ' ' + gone[binHead.indexOf('روز حذف')]);
+ok('the bin keeps the original date and weekday too',
+   /^\d{4}-\d{2}-\d{2}$/.test(String(gone[binHead.indexOf('تاریخ ثبت')])) &&
+   String(gone[binHead.indexOf('روز ثبت')]).length > 2);
+/* the deleting phone sent no note here — the bin fills it from the stored row */
+ok('the bin keeps who, what and the note',
+   gone[binHead.indexOf('نام')] === 'محمد' &&
+   gone[binHead.indexOf('عنوان کار')] === 'بیرون گذاشتن آشغال' &&
+   gone[binHead.indexOf('یادداشت')] === 'سطل حیاط',
+   JSON.stringify([gone[binHead.indexOf('نام')], gone[binHead.indexOf('یادداشت')]]));
+ok('a restored record keeps its icon and task id',
+   String(gone[binHead.indexOf('taskId')]) === 'P5' && String(gone[binHead.indexOf('icon')]) === '🗑️',
+   gone[binHead.indexOf('taskId')] + ' ' + gone[binHead.indexOf('icon')]);
+ok('the deletion is reported to the phones', afterDelete.logs.some(l => l.id === 'd2' && l.deleted));
+ok('reports drop the deleted record',
+   !(g4.rows('نوبت‌ها').slice(1).some(r => String(r[7]).includes('آشغال'))));
+
+/* ---- restoring puts it back and tells every phone ---- */
+const binSh = g4.sheet(BIN);
+const restoreCol = binHead.indexOf('بازیابی؟') + 1;
+const rowIdx = bin.findIndex(r => r[0] === 'd2') + 1;
+binSh.getRange(rowIdx, restoreCol).setValues([['بله']]);
+const restored = g4.run('restoreDeleted');
+ok('restore reports what it brought back', /1 رکورد/.test(restored), restored);
+ok('the record is back in logs', g4.rows('logs').slice(1).some(r => r[0] === 'd2'));
+ok('the bin no longer holds it', !g4.rows(BIN).slice(1).some(r => r[0] === 'd2'));
+
+const afterRestore = g4.post({ token: 'khaneh-1404', since: afterDelete.maxRev, logs: [] });
+const back = afterRestore.logs.find(l => l.id === 'd2');
+ok('phones are told to bring it back', !!back && !back.deleted,
+   back ? 'deleted=' + back.deleted : 'not sent');
+ok('reports include it again',
+   g4.rows('نوبت‌ها').slice(1).some(r => String(r[7]).includes('آشغال')));
 done();

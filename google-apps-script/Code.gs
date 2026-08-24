@@ -14,6 +14,7 @@ var TOKEN = 'khaneh-1404';
 
 var LOGS_SHEET = 'logs';
 var CONFIG_SHEET = 'config';
+var BIN_SHEET = 'حذف‌شده‌ها';
 
 /** ستون‌های برگهٔ logs — ستون‌های اول برای خواندن آدم، بقیه برای برنامه */
 var HEAD = ['id','تاریخ','ساعت','روز هفته','نام','نوع','کد کار','عنوان کار','یادداشت',
@@ -27,6 +28,16 @@ var WD = ['یکشنبه','دوشنبه','سه‌شنبه','چهارشنبه','پ
 
 /** ستون‌های فنی برگهٔ logs — پنهان می‌شوند تا جدول خوانا بماند */
 var TECH = [C.type, C.taskId, C.icon, C.ts, C.rev, C.deleted, C.sess];
+
+/** سطل حذف‌شده‌ها: رکورد پاک‌شده از logs بیرون می‌رود ولی ردش اینجا می‌ماند
+    تا حذف به گوشی‌های دیگر هم برسد و دوباره برنگردد. */
+var BIN_HEAD = ['id','تاریخ حذف','روز حذف','ساعت حذف',
+                'تاریخ ثبت','روز ثبت','ساعت ثبت','نام','نوع','کد کار','عنوان کار','یادداشت','ثبت‌کننده',
+                'بازیابی؟','rev','ts','type','taskId','icon','sess'];
+var B = {id:0, delDate:1, delWd:2, delTime:3,
+         date:4, wd:5, time:6, person:7, typeFa:8, code:9, title:10, note:11, by:12,
+         restore:13, rev:14, ts:15, type:16, taskId:17, icon:18, sess:19};
+var BIN_TECH = [B.rev, B.ts, B.type, B.taskId, B.icon, B.sess];
 
 var STYLE = {
   headerBg: '#8A5A34',
@@ -48,6 +59,7 @@ function setup(){
   var ss = book();
   logsSheet();
   configSheet();
+  binSheet();
   buildReports();
   tidy();
   SpreadsheetApp.flush();                  /* تا تغییرات فوراً در شیت دیده شود */
@@ -67,10 +79,65 @@ function rebuild(){
   return 'OK';
 }
 
+/**
+ * هر سطری از «حذف‌شده‌ها» که در ستون «بازیابی؟» علامت خورده باشد را برمی‌گرداند.
+ * رکورد با یک rev تازه به logs برمی‌گردد، پس همهٔ گوشی‌ها در همگام‌سازی بعدی
+ * دوباره آن را می‌بینند — حتی اگر اپشان همان لحظه باز باشد.
+ */
+function restoreDeleted(){
+  var sh = binSheet();
+  var last = sh.getLastRow();
+  if(last < 2) return note('چیزی برای بازیابی نیست');
+
+  var vals = sh.getRange(2, 1, last - 1, BIN_HEAD.length).getValues();
+  var back = [], rows = [];
+  for(var i = 0; i < vals.length; i++){
+    var v = vals[i];
+    if(!v[B.id] || !isYes(v[B.restore])) continue;
+    back.push({
+      id: String(v[B.id]),
+      ts: Number(v[B.ts]) || 0,
+      person: String(v[B.person] || ''),
+      type: String(v[B.type] || ''),
+      taskId: String(v[B.taskId] || ''),
+      code: String(v[B.code] || ''),
+      title: String(v[B.title] || ''),
+      icon: String(v[B.icon] || ''),
+      note: String(v[B.note] || ''),
+      by: String(v[B.by] || ''),
+      sess: String(v[B.sess] || ''),
+      deleted: false
+    });
+    rows.push(i + 2);
+  }
+  if(!back.length) return note('هیچ سطری علامت «بله» در ستون «بازیابی؟» ندارد');
+
+  upsertLogs(back);                                  /* با rev تازه به logs برمی‌گردد */
+  rows.sort(function(a,b){ return b - a; });
+  for(var d = 0; d < rows.length; d++) sh.deleteRow(rows[d]);   /* دیگر tombstone نیست */
+  buildReports();
+  tidy();
+  SpreadsheetApp.flush();
+  return note(back.length + ' رکورد بازیابی شد');
+}
+
+function isYes(v){
+  var t = String(v == null ? '' : v).trim().toLowerCase();
+  return t === 'بله' || t === 'بلی' || t === 'آری' || t === 'yes' || t === 'y'
+      || t === 'true' || t === '1' || t === '✓' || t === '✔';
+}
+
+function note(msg){
+  Logger.log(msg);
+  try{ book().toast(msg, 'مراقبت از خانه', 8); }catch(err){}
+  return msg;
+}
+
 /** عرض ستون‌ها و قالب همهٔ برگه‌ها را دوباره مرتب می‌کند. */
 function tidy(){
   var ss = book();
   styleSheet(logsSheet(), HEAD.length, TECH);
+  styleSheet(binSheet(), BIN_HEAD.length, BIN_TECH);
   ['نوبت‌ها','خلاصهٔ افراد','روزانه','آمار کارها'].forEach(function(name){
     var sh = ss.getSheetByName(name);
     if(sh) styleSheet(sh, Math.max(sh.getLastColumn(), 1));
@@ -87,6 +154,7 @@ function onOpen(){
       .createMenu('مراقبت از خانه')
       .addItem('ساخت / بازسازی برگه‌ها', 'setup')
       .addItem('بازسازی گزارش‌ها', 'rebuild')
+      .addItem('بازیابی رکوردهای علامت‌خورده', 'restoreDeleted')
       .addItem('مرتب کردن ستون‌ها', 'tidy')
       .addItem('نمایش ستون‌های فنی', 'showTechColumns')
       .addToUi();
@@ -127,7 +195,7 @@ function handle(e, body){
     if(changed) buildReports();
     return json({
       ok: true,
-      logs: readLogs(since),
+      logs: readLogs(since).concat(readBin(since)),
       config: readConfig(since),
       maxRev: currentRev(),
       serverTime: Date.now()
@@ -177,6 +245,16 @@ function logsSheet(){
   }
   return sh;
 }
+function binSheet(){
+  var ss = book(), sh = ss.getSheetByName(BIN_SHEET);
+  if(!sh){
+    sh = ss.insertSheet(BIN_SHEET);
+    sh.getRange(1, 1, 1, BIN_HEAD.length).setValues([BIN_HEAD]);
+    sh.setFrozenRows(1);
+    sh.setRightToLeft(true);
+  }
+  return sh;
+}
 function configSheet(){
   var ss = book(), sh = ss.getSheetByName(CONFIG_SHEET);
   if(!sh){
@@ -198,21 +276,25 @@ function sessionStamp(log, tsById){
   return at ? fmt(at, 'yyyy-MM-dd HH:mm') : 'بدون چک‌این';
 }
 
+function typeLabel(t){
+  return t === 'checkin' ? 'ورود'
+       : t === 'pos' ? 'کار مثبت'
+       : t === 'neg' ? 'امتیاز منفی'
+       : t === 'co_ok' ? 'مورد چک‌اوت (انجام شد)'
+       : t === 'checkout' ? 'چک‌اوت'
+       : String(t || '');
+}
+
 function rowOf(log, rev, tsById){
   var d = new Date(Number(log.ts) || Date.now());
-  var typeFa = log.type === 'checkin' ? 'ورود'
-             : log.type === 'pos' ? 'کار مثبت'
-             : log.type === 'neg' ? 'امتیاز منفی'
-             : log.type === 'co_ok' ? 'مورد چک‌اوت (انجام شد)'
-             : log.type === 'checkout' ? 'چک‌اوت'
-             : String(log.type || '');
+  var typeFa = typeLabel(log.type);
   var r = [];
   r[C.id] = log.id;
   r[C.date] = Utilities.formatDate(d, tz(), 'yyyy-MM-dd');
   r[C.time] = Utilities.formatDate(d, tz(), 'HH:mm');
   r[C.wd] = WD[Number(Utilities.formatDate(d, tz(), 'u')) % 7];
   r[C.person] = log.person || '';
-  r[C.typeFa] = typeFa + (log.deleted ? ' (حذف‌شده)' : '');
+  r[C.typeFa] = typeFa;
   r[C.code] = log.code || '';
   r[C.title] = log.title || (log.type === 'checkin' ? 'ورود به خانه' : log.type === 'checkout' ? 'چک‌اوت' : '');
   r[C.note] = log.note || '';
@@ -250,18 +332,127 @@ function upsertLogs(logs){
   var rev = base - logs.length;
   var appends = [];
 
+  var drops = [], binned = [];
+
   for(var k = 0; k < logs.length; k++){
     var log = logs[k];
     if(!log || !log.id) continue;
     rev++;
+    if(log.deleted){
+      var known = at[String(log.id)];
+      if(known) drops.push(known);          /* سطرش از logs برداشته می‌شود */
+      /* هرچه گوشی نفرستاده از خودِ سطر موجود برداشته می‌شود تا سطل کامل بماند */
+      binned.push(binRowOf(known ? merged(log, existing[known - 2]) : log, rev));
+      continue;
+    }
     var row = rowOf(log, rev, tsById);
     var r = at[String(log.id)];
     if(r) sh.getRange(r, 1, 1, HEAD.length).setValues([row]);
     else appends.push(row);
   }
+
   if(appends.length){
     sh.getRange(sh.getLastRow() + 1, 1, appends.length, HEAD.length).setValues(appends);
   }
+  /* از پایین به بالا، تا شمارهٔ سطرهای بعدی جابه‌جا نشود */
+  drops.sort(function(a,b){ return b - a; });
+  for(var d = 0; d < drops.length; d++) sh.deleteRow(drops[d]);
+  if(binned.length) writeBin(binned);
+}
+
+/** فیلدهای جاافتادهٔ یک حذف را از سطر موجود در logs پر می‌کند */
+function merged(log, row){
+  if(!row) return log;
+  return {
+    id: log.id,
+    ts: Number(log.ts) || Number(row[C.ts]) || Date.now(),
+    person: log.person || String(row[C.person] || ''),
+    type: log.type || String(row[C.type] || ''),
+    taskId: log.taskId || String(row[C.taskId] || ''),
+    code: log.code || String(row[C.code] || ''),
+    title: log.title || String(row[C.title] || ''),
+    icon: log.icon || String(row[C.icon] || ''),
+    note: log.note || String(row[C.note] || ''),
+    by: log.by || String(row[C.by] || ''),
+    sess: log.sess || String(row[C.sess] || ''),
+    deleted: true
+  };
+}
+
+function binRowOf(log, rev){
+  var now = new Date();
+  var when = Number(log.ts) || Date.now();
+  var was = new Date(when);
+  var r = [];
+  r[B.id] = log.id;
+  r[B.delDate] = fmt(now.getTime(), 'yyyy-MM-dd');
+  r[B.delWd] = weekdayFa(now.getTime());
+  r[B.delTime] = fmt(now.getTime(), 'HH:mm');
+  r[B.date] = fmt(when, 'yyyy-MM-dd');
+  r[B.wd] = weekdayFa(when);
+  r[B.time] = fmt(when, 'HH:mm');
+  r[B.person] = log.person || '';
+  r[B.typeFa] = typeLabel(log.type);
+  r[B.code] = log.code || '';
+  r[B.title] = log.title || (log.type === 'checkin' ? 'ورود به خانه' : log.type === 'checkout' ? 'چک‌اوت' : '');
+  r[B.note] = log.note || '';
+  r[B.by] = log.by || '';
+  r[B.restore] = '';                 /* اینجا «بله» بنویس و بازیابی را اجرا کن */
+  r[B.rev] = rev;
+  r[B.ts] = when;
+  r[B.type] = log.type || '';
+  r[B.taskId] = log.taskId || '';
+  r[B.icon] = log.icon || '';
+  r[B.sess] = log.sess || '';
+  return r;
+}
+
+function weekdayFa(ts){ return WD[Number(fmt(ts, 'u')) % 7]; }
+
+function writeBin(rows){
+  var sh = binSheet();
+  var last = sh.getLastRow();
+  var at = {};
+  if(last > 1){
+    var ids = sh.getRange(2, 1, last - 1, 1).getValues();
+    for(var i = 0; i < ids.length; i++) at[String(ids[i][0])] = i + 2;
+  }
+  var appends = [];
+  for(var k = 0; k < rows.length; k++){
+    var r = at[String(rows[k][B.id])];
+    if(r) sh.getRange(r, 1, 1, BIN_HEAD.length).setValues([rows[k]]);
+    else appends.push(rows[k]);
+  }
+  if(appends.length){
+    sh.getRange(sh.getLastRow() + 1, 1, appends.length, BIN_HEAD.length).setValues(appends);
+  }
+}
+
+/** حذف‌ها هم مثل ثبت‌ها rev دارند تا به گوشی‌های دیگر برسند */
+function readBin(since){
+  var sh = binSheet();
+  var last = sh.getLastRow();
+  if(last < 2) return [];
+  var vals = sh.getRange(2, 1, last - 1, BIN_HEAD.length).getValues();
+  var out = [];
+  for(var i = 0; i < vals.length; i++){
+    var v = vals[i];
+    if(!v[B.id]) continue;
+    var rev = Number(v[B.rev]) || 0;
+    if(rev <= since) continue;
+    out.push({
+      id: String(v[B.id]),
+      ts: Number(v[B.ts]) || 0,
+      person: String(v[B.person] || ''),
+      title: String(v[B.title] || ''),
+      code: String(v[B.code] || ''),
+      sess: String(v[B.sess] || ''),
+      type: String(v[B.type] || ''),
+      deleted: true,
+      rev: rev
+    });
+  }
+  return out;
 }
 
 function readLogs(since){
@@ -445,6 +636,7 @@ function buildReports(){
     tasks[k].per[l.person] = (tasks[k].per[l.person] || 0) + 1;
   });
   styleSheet(logsSheet(), HEAD.length, TECH);
+  styleSheet(binSheet(), BIN_HEAD.length, BIN_TECH);
 
   writeReport('آمار کارها', ['کد','عنوان','نوع'].concat(people).concat(['مجموع']),
     Object.keys(tasks).map(function(k){
@@ -534,7 +726,7 @@ function writeReport(name, head, rows){
 
 /** اگر خواستی همه‌چیز را پاک کنی (اطلاعات از بین می‌رود). */
 function resetAll(){
-  logsSheet().clear(); configSheet().clear();
+  logsSheet().clear(); configSheet().clear(); binSheet().clear();
   PropertiesService.getScriptProperties().deleteProperty('rev');
   book().getSheetByName(LOGS_SHEET).getRange(1, 1, 1, HEAD.length).setValues([HEAD]);
 }

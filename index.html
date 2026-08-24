@@ -718,7 +718,7 @@ function bindTaskRows(root){
     const id = el.dataset.id, t = task('pos', id), person = S.ui.person;
     const ex = hasToday(person, 'pos', id);
     if(ex){
-      if(!await ask(`ثبت امروزِ «${t.title}» برای ${person} حذف شود؟`, {ok:'حذف کن', danger:true})) return;
+      if(!await confirmDelete(`ثبت امروزِ «${t.title}» برای ${person} حذف می‌شود.`)) return;
       dropLog(ex); save(); toast('ثبت حذف شد');
     }else{
       if(!gateState(person).ok){ toast('اول آب را روی home بگذار'); return; }
@@ -789,10 +789,13 @@ function renderCheckout(){
     </li>`;
   }).join('');
   bindMore(nl);
-  nl.querySelectorAll('[data-co]').forEach(el => el.onclick = () => {
+  nl.querySelectorAll('[data-co]').forEach(el => el.onclick = async () => {
     const id = el.dataset.co, t = task('neg', id), person = coPerson();
     const ex = coCleared(person)[id];
-    if(ex){ dropLog(ex); save(); toast('دوباره منفی شد'); }
+    if(ex){
+      if(!await confirmDelete(`«${t.title}» دوباره منفی می‌شود و ثبتِ انجامش حذف می‌شود.`)) return;
+      dropLog(ex); save(); toast('دوباره منفی شد');
+    }
     else{
       addLog({type:'co_ok', person, taskId:id, code:t.code||t.id, title:t.title, icon:t.icon,
               by:S.ui.person, sess:coScope(person).sess});
@@ -845,8 +848,8 @@ async function registerCheckout(){
 async function undoCheckout(){
   const person = coPerson();
   if(!coRegistered(person)) return;
-  if(!await ask('چک‌اوت لغو شود؟ امتیازهای منفی همین نوبت هم برداشته می‌شوند.',
-                {ok:'لغو چک‌اوت', danger:true})) return;
+  if(!await confirmDelete('چک‌اوت این نوبت و امتیازهای منفی همان نوبت حذف می‌شوند.',
+                          {title:'لغو چک‌اوت'})) return;
   scopeLogs(person).forEach(l => { if(l.type==='neg' || l.type==='checkout') dropLog(l); });
   save(); render(); toast('چک‌اوت لغو شد');
 }
@@ -1107,8 +1110,7 @@ function bindLogRows(root){
   root.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
     const l = S.logs.find(x => x.id===b.dataset.del);
     if(!l) return;
-    if(!await ask(`این ثبت حذف شود؟\n${l.person} — ${l.title || typeName(l.type)}\n${stampLong(l.ts)}`,
-                  {ok:'حذف کن', danger:true})) return;
+    if(!await confirmDelete(`این ثبت حذف می‌شود:\n${l.person} — ${l.title || typeName(l.type)}\n${stampLong(l.ts)}`)) return;
     dropLog(l); save(); render(); toast('حذف شد');
   });
 }
@@ -1136,7 +1138,7 @@ function renderSettings(){
   pa.querySelectorAll('[data-rmp]').forEach(b => b.onclick = async () => {
     const p = b.dataset.rmp;
     if(S.people.length<=1){ toast('حداقل یک نفر باید بماند'); return; }
-    if(!await ask(`${p} از لیست حذف شود؟ ثبت‌هایش باقی می‌مانند.`, {ok:'حذف کن', danger:true})) return;
+    if(!await confirmDelete(`${p} از لیست افراد حذف می‌شود. ثبت‌هایش باقی می‌مانند.`)) return;
     S.people = S.people.filter(x => x!==p);
     if(S.ui.person===p) S.ui.person = S.people[0];
     markConfig(); save(); render();
@@ -1168,7 +1170,7 @@ function bindTaskAdmin(rootId, type){
   const root = document.getElementById(rootId);
   root.querySelectorAll('[data-et]').forEach(b => b.onclick = () => editTask(type, b.dataset.et));
   root.querySelectorAll('[data-dt]').forEach(b => b.onclick = async () => {
-    if(!await ask('این کار حذف شود؟ ثبت‌های قبلی در تاریخچه می‌مانند.', {ok:'حذف کن', danger:true})) return;
+    if(!await confirmDelete('این کار از لیست حذف می‌شود. ثبت‌های قبلی در تاریخچه می‌مانند.')) return;
     const id = b.dataset.dt;
     if(type==='neg') S.neg = S.neg.filter(t => t.id!==id); else S.pos = S.pos.filter(t => t.id!==id);
     markConfig(); save(); render(); toast('حذف شد');
@@ -1203,6 +1205,30 @@ function say(msg, title){
   return dialog(title || 'پیام', `<div class="dlgmsg">${escLines(msg)}</div>`,
     [{label: 'باشه', cls: 'primary', value: true}]);
 }
+/* Every deletion goes through here: it names what is about to go, and offers
+   a backup first. The answer decides whether the backup is written. */
+async function confirmDelete(what, opts){
+  opts = opts || {};
+  const v = await dialog(opts.title || 'حذف', `
+    <div class="dlgmsg">${escLines(what)}</div>
+    <p class="hint">می‌توانی قبل از حذف یک نسخهٔ پشتیبان بگیری.</p>`, [
+    {label: '📥 پشتیبان بگیر، بعد حذف کن', cls: 'primary', value: 'backup'},
+    {label: 'حذف بدون پشتیبان', cls: 'danger', value: 'plain'},
+    {label: 'انصراف', cls: 'ghost', value: false}
+  ]);
+  if(!v) return false;
+  if(v === 'backup'){
+    const r = await saveBackupFile();
+    if(opts.excel && r.ok) await exportExcel(true);
+    if(!r.ok){
+      const go = await ask(failMsg(r) + '\n\nبدون پشتیبان ادامه بدهم؟',
+                           {ok: 'حذف کن', danger: true});
+      if(!go) return false;
+    }
+  }
+  return true;
+}
+
 function askText(label, value, title){
   return new Promise(resolve => {
     dlgResolve = resolve;
@@ -1593,8 +1619,8 @@ function fileStamp(){
   return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}`;
 }
 
-async function exportExcel(){
-  if(!L().length){ toast('هنوز چیزی ثبت نشده'); return; }
+async function exportExcel(quiet){
+  if(!L().length){ if(!quiet) toast('هنوز چیزی ثبت نشده'); return; }
   const hist = historyRows();
   const book = buildXlsx([
     {name:'تاریخچه', rows:hist, widths:[6,13,7,10,10,16,8,26,40,10,10,18,20,10,14,14]},
@@ -1609,7 +1635,8 @@ async function exportExcel(){
     {filename: base + '.xlsx', data: book},
     {filename: base + '.csv',  data: toCsv(hist)}
   ]);
-  if(r.ok){ toast('فایل ' + (r.filename.endsWith('.csv') ? 'CSV' : 'اکسل') + ' ذخیره شد'); return; }
+  if(r.ok){ if(!quiet) toast('فایل ' + (r.filename.endsWith('.csv') ? 'CSV' : 'اکسل') + ' ذخیره شد'); return; }
+  if(quiet) return;                      /* the caller is mid-flow; don't hijack the modal */
   /* last resort: hand over the table as text to paste into Excel */
   openModal('خروجی اکسل', `
     <div class="warnbox">${failMsg(r)}. متن زیر را کپی کن و در اکسل paste کن — ستون‌ها با Tab جدا شده‌اند.</div>
@@ -1619,8 +1646,8 @@ async function exportExcel(){
     <div class="row"><button class="btn sm" id="bkCopy">📋 کپی جدول</button></div>`);
   bindBackupBox();
 }
-document.getElementById('btnExcel').onclick = exportExcel;
-document.getElementById('btnExcelTop').onclick = exportExcel;
+document.getElementById('btnExcel').onclick = () => exportExcel();
+document.getElementById('btnExcelTop').onclick = () => exportExcel();
 
 /* ---------------- backup / reset ---------------- */
 
@@ -1674,9 +1701,17 @@ async function resetFlow(fullReset){
   const what = fullReset
     ? 'ریست کامل: همهٔ ثبت‌ها، افراد و کارها به حالت اولیه برمی‌گردند.'
     : 'همهٔ ثبت‌ها (ورودها و امتیازها) پاک می‌شوند.';
-  if(!await ask(what + '\n\nابتدا فایل پشتیبان ذخیره می‌شود. ادامه؟', {ok:'ادامه', danger:true})) return;
+  const choice = await dialog('پاک کردن همه', `
+    <div class="dlgmsg">${escLines(what)}</div>
+    <p class="hint">می‌توانی قبل از پاک شدن، یک نسخه از همهٔ اطلاعات را بگیری.</p>`, [
+    {label: '📥 پشتیبان + فایل اکسل، بعد پاک کن', cls: 'primary', value: 'both'},
+    {label: '📥 فقط پشتیبان، بعد پاک کن', cls: '', value: 'backup'},
+    {label: 'انصراف', cls: 'ghost', value: false}
+  ]);
+  if(!choice) return;
 
   const r = await saveBackupFile();      /* backup ALWAYS happens before wiping */
+  if(choice === 'both') await exportExcel(true);
   openModal('پشتیبان — تأیید پاک کردن', `
     <div class="${r.ok?'okbox':'warnbox'}">${r.ok
       ? 'فایل پشتیبان ذخیره شد ✅'
@@ -1710,6 +1745,7 @@ document.getElementById('tabs').onclick = e => {
   document.querySelectorAll('section').forEach(s =>
     s.classList.toggle('on', s.id === 'tab-'+b.dataset.tab));
   S.ui.tab = b.dataset.tab; save();
+  if(syncOn()) doSync(true);
 };
 
 document.getElementById('btnCheckin').onclick = async () => {
@@ -1777,6 +1813,7 @@ function anythingDirty(){ return S.configDirty || S.logs.some(l => l.dirty); }
 
 function queueSync(){
   if(!syncOn() || !anythingDirty()) return;
+  quietPolls = 0;
   clearTimeout(syncTimer);
   syncTimer = setTimeout(() => doSync(), 1200);
 }
@@ -1843,6 +1880,10 @@ function applyRemote(j, sent, pushedCfg){
     S.configDirty = false; S.configRev = j.config.rev;
   }
   if(typeof j.maxRev === 'number') S.rev = Math.max(S.rev||0, j.maxRev);
+
+  const incoming = (j.logs || []).length + (j.config ? 1 : 0);
+  if(incoming) quietPolls = 0; else quietPolls++;
+  return incoming;
 }
 
 function paintSync(){
@@ -1893,6 +1934,7 @@ document.getElementById('btnSyncSave').onclick = async () => {
     await doSync(true);
   }
   renderSync();
+  wakeSync();
   if(r.ok) toast('وصل شد — اطلاعات همگام شد');
 };
 document.getElementById('btnSyncNow').onclick = async () => {
@@ -1902,7 +1944,7 @@ document.getElementById('btnSyncNow').onclick = async () => {
 };
 document.getElementById('btnSyncOff').onclick = async () => {
   if(!await ask('اتصال قطع شود؟ اطلاعات روی این گوشی باقی می‌ماند.', {ok:'قطع کن', danger:true})) return;
-  SY = {url:'', token:''}; saveSync(); renderSync(); toast('اتصال قطع شد');
+  SY = {url:'', token:''}; saveSync(); renderSync(); clearTimeout(pollTimer); toast('اتصال قطع شد');
 };
 document.getElementById('btnSyncLink').onclick = async () => {
   const link = shareLink();
@@ -1914,10 +1956,34 @@ document.getElementById('btnSyncLink').onclick = async () => {
     bindBackupBox(); }
 };
 
-/* keep the phones in step without hammering the Sheet */
-setInterval(() => { if(document.visibilityState==='visible') doSync(true); }, 25000);
-document.addEventListener('visibilitychange', () => { if(document.visibilityState==='visible') doSync(true); });
-window.addEventListener('online', () => doSync(true));
+/* Keeping an open app current without burning the script's daily quota:
+   poll briskly while something is actually happening, then back off when the
+   Sheet has been quiet. Any sign of life snaps it back to the fast rate. */
+const POLL_FAST = 15000, POLL_SLOW = 60000, QUIET_BEFORE_SLOW = 4;
+let pollTimer, quietPolls = 0;
+
+function schedulePoll(){
+  clearTimeout(pollTimer);
+  if(!syncOn()) return;
+  pollTimer = setTimeout(async () => {
+    if(document.visibilityState === 'visible') await doSync(true);
+    schedulePoll();
+  }, quietPolls >= QUIET_BEFORE_SLOW ? POLL_SLOW : POLL_FAST);
+}
+
+/* something changed, or the user came back — check now and stay brisk */
+function wakeSync(){
+  quietPolls = 0;
+  schedulePoll();
+  if(document.visibilityState === 'visible') doSync(true);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible') wakeSync();
+});
+window.addEventListener('focus', wakeSync);
+window.addEventListener('online', wakeSync);
+schedulePoll();
 
 /* ---------------- boot ---------------- */
 

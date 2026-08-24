@@ -44,6 +44,7 @@ function makeSheet(name){
     showColumns(c, n){ for (let i = 0; i < (n || 1); i++) delete sheet.hidden[c + i]; return sheet; },
     getBandings(){ return sheet.bandings.slice(); },
     clearContents(){ cells.length = 0; return sheet; },
+    deleteRow(r){ if (r >= 1 && r <= cells.length) cells.splice(r - 1, 1); return sheet; },
     getLastRow(){ let last = 0; cells.forEach((r, i) => { if (r && r.some(c => c !== '' && c != null)) last = i + 1; }); return last; },
     getRange(row, col, nr = 1, nc = 1){
       const range = {

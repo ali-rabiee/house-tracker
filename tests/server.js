@@ -31,6 +31,14 @@ const server = http.createServer((req, res) => {
     res.end('{"ok":true}');
     return;
   }
+  if (req.url.startsWith('/restore')) {        /* mark every binned row and run the Sheet action */
+    const col = Number(new URL(req.url, 'http://x').searchParams.get('col'));
+    const sh = gas.sheet('حذف‌شده‌ها');
+    const rows = gas.rows('حذف‌شده‌ها') || [];
+    for (let r = 2; r <= rows.length; r++) sh.getRange(r, col).setValues([['بله']]);
+    res.end(String(gas.run('restoreDeleted')));
+    return;
+  }
   if (req.url.startsWith('/dump')) {
     const out = {};
     gas.sheetNames().forEach(n => out[n] = gas.rows(n));
