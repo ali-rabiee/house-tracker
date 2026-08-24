@@ -4,6 +4,9 @@
  * این فایل را در Extensions → Apps Script همان Google Sheet بچسبان،
  * TOKEN را عوض کن، و با Deploy → New deployment → Web app منتشرش کن.
  * راهنمای کامل در SETUP.md
+ *
+ * ⚠️ برای ساخت برگه‌ها، در منوی کشویی بالای صفحه تابع «setup» انتخاب شده باشد
+ *    و بعد Run را بزن. اجرای بقیهٔ توابع هیچ برگه‌ای نمی‌سازد.
  */
 
 /** رمز مشترک — همین را در تنظیمات اپ هم وارد کن. حتماً عوضش کن. */
@@ -22,12 +25,62 @@ var C = {id:0, date:1, time:2, wd:3, person:4, typeFa:5, code:6, title:7, note:8
 
 var WD = ['یکشنبه','دوشنبه','سه‌شنبه','چهارشنبه','پنجشنبه','جمعه','شنبه'];
 
-function doGet(e){ return handle(e, null); }
+
+/* ================================================================
+   ⬇️ این تابع را اجرا کن (setup) — اولین گزینهٔ منوی Run همین است
+   ================================================================ */
+
+/** برگه‌ها را می‌سازد و گزارش‌ها را بازسازی می‌کند. */
+function setup(){
+  var ss = book();
+  logsSheet();
+  configSheet();
+  buildReports();
+  SpreadsheetApp.flush();                  /* تا تغییرات فوراً در شیت دیده شود */
+  var names = [];
+  ss.getSheets().forEach(function(sh){ names.push(sh.getName()); });
+  var msg = 'برگه‌ها آماده شد: ' + names.join('، ');
+  try{ ss.toast(msg, 'مراقبت از خانه', 10); }catch(err){}
+  Logger.log(msg + '\n(اگر در شیت چیزی نمی‌بینی، صفحهٔ شیت را یک بار refresh کن.)');
+  return msg;
+}
+
+/** گزارش‌ها را از روی logs دوباره می‌سازد (بدون دست زدن به ثبت‌ها). */
+function rebuild(){
+  buildReports();
+  SpreadsheetApp.flush();
+  try{ book().toast('گزارش‌ها بازسازی شد', 'مراقبت از خانه', 6); }catch(err){}
+  return 'OK';
+}
+
+/** منوی «مراقبت از خانه» را به خود شیت اضافه می‌کند (بعد از refresh دیده می‌شود). */
+function onOpen(){
+  try{
+    SpreadsheetApp.getUi()
+      .createMenu('مراقبت از خانه')
+      .addItem('ساخت / بازسازی برگه‌ها', 'setup')
+      .addItem('بازسازی گزارش‌ها', 'rebuild')
+      .addToUi();
+  }catch(err){}
+}
+
+
+/* ---------------- نقطهٔ ورود وب‌اپ ---------------- */
+/* این دو تا را دستی Run نکن — فقط از طریق آدرس Web App صدا زده می‌شوند. */
+
+function doGet(e){
+  if(!e) throw new Error(MANUAL_RUN);
+  return handle(e, null);
+}
 function doPost(e){
+  if(!e) throw new Error(MANUAL_RUN);
   var body = null;
   try{ body = JSON.parse(e.postData.contents); }catch(err){ body = null; }
   return handle(e, body);
 }
+
+var MANUAL_RUN = 'این تابع برای درخواست‌های اپ است و دستی اجرا نمی‌شود. '
+  + 'در منوی کشویی بالای صفحه «setup» را انتخاب کن و دوباره Run بزن.';
 
 function handle(e, body){
   var token = (body && body.token) || (e && e.parameter && e.parameter.token) || '';
@@ -77,7 +130,12 @@ function nextRev(n){
 
 /* ---------------- sheets ---------------- */
 
-function book(){ return SpreadsheetApp.getActiveSpreadsheet(); }
+function book(){
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if(!ss) throw new Error('این اسکریپت به هیچ Google Sheet وصل نیست. '
+    + 'از داخل خود شیت با Extensions → Apps Script بازش کن و کد را همان‌جا بچسبان.');
+  return ss;
+}
 
 function logsSheet(){
   var ss = book(), sh = ss.getSheetByName(LOGS_SHEET);
@@ -379,12 +437,6 @@ function writeReport(name, head, rows){
 }
 
 /* ---------------- ابزار دستی ---------------- */
-
-/** یک بار از منوی Run اجرا کن تا برگه‌ها ساخته شوند (اختیاری). */
-function setup(){
-  logsSheet(); configSheet(); buildReports();
-  SpreadsheetApp.getActive().toast('برگه‌ها آماده شد');
-}
 
 /** اگر خواستی همه‌چیز را پاک کنی (اطلاعات از بین می‌رود). */
 function resetAll(){

@@ -71,7 +71,19 @@
 
 همگام‌سازی روی لینک claude.ai کار نمی‌کند (آن صفحه اجازهٔ اتصال بیرونی ندارد و خودش تذکر می‌دهد)؛ از لینک GitHub Pages استفاده کنید.
 
+## تست‌ها
+
+```bash
+npm i --no-save playwright-core     # یک بار
+node tests/run.js                   # همهٔ مجموعه‌ها
+node tests/run.js sync              # فقط یکی
+```
+
+`tests/gas-emu.js` خودِ `Code.gs` را با شبیه‌سازی APIهای Apps Script اجرا می‌کند،
+پس تست‌های همگام‌سازی روی بک‌اند واقعی اجرا می‌شوند نه روی یک بدل.
+`sandbox.test.js` اپ را داخل iframe سندباکس‌شده — همان محدودیت نمایشگر آرتیفکت — اجرا می‌کند.
+
 ## انتشار روی GitHub Pages
 
-`Settings → Pages` → شاخهٔ `claude/home-tasks-app-srn8kq` و پوشهٔ `/ (root)`.
+`Settings → Pages` → شاخهٔ `main` و پوشهٔ `/ (root)`.
 مراحل کامل با تمام کلیک‌ها در [SETUP.md](SETUP.md) آمده است.
