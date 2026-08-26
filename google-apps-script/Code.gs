@@ -143,6 +143,7 @@ function tidy(){
     if(sh) styleSheet(sh, Math.max(sh.getLastColumn(), 1));
   });
   SpreadsheetApp.flush();
+  try{ PropertiesService.getScriptProperties().setProperty('tidyAt', String(Date.now())); }catch(err){}
   try{ ss.toast('ستون‌ها مرتب شد', 'مراقبت از خانه', 6); }catch(err){}
   return 'OK';
 }
@@ -183,28 +184,41 @@ function handle(e, body){
   var token = (body && body.token) || (e && e.parameter && e.parameter.token) || '';
   if(TOKEN && token !== TOKEN) return json({ok:false, error:'رمز اشتباه است'});
 
-  var lock = LockService.getScriptLock();
-  try{ lock.waitLock(25000); }
-  catch(err){ return json({ok:false, error:'سرور مشغول است، دوباره تلاش کن'}); }
+  var since = Number((body && body.since) || (e && e.parameter && e.parameter.since) || 0);
+  var writes = !!(body && ((body.logs && body.logs.length) || body.config));
 
+  /* گوشی‌ها بیشتر وقت‌ها فقط می‌خوانند. خواندن قفل نمی‌گیرد، وگرنه پشت
+     نوشتن‌ها صف می‌بندد و بعد از مدتی «سرور مشغول است» می‌گیرد. */
+  if(!writes){
+    try{ return json(snapshot(since)); }
+    catch(err){ return json({ok:false, error:String(err && err.message || err)}); }
+  }
+
+  var lock = LockService.getScriptLock();
+  if(!lock.tryLock(10000)){
+    /* صف شلوغ است — اپ خودش کمی بعد دوباره تلاش می‌کند و چیزی از دست نمی‌رود */
+    return json({ok:false, busy:true, error:'شلوغ است، چند لحظهٔ دیگر دوباره تلاش می‌شود'});
+  }
   try{
-    var since = Number((body && body.since) || (e && e.parameter && e.parameter.since) || 0);
-    var changed = false;
-    if(body && body.logs && body.logs.length){ upsertLogs(body.logs); changed = true; }
-    if(body && body.config){ writeConfig(body.config); changed = true; }
-    if(changed) buildReports();
-    return json({
-      ok: true,
-      logs: readLogs(since).concat(readBin(since)),
-      config: readConfig(since),
-      maxRev: currentRev(),
-      serverTime: Date.now()
-    });
+    if(body.logs && body.logs.length) upsertLogs(body.logs);
+    if(body.config) writeConfig(body.config);
+    buildReports();
+    return json(snapshot(since));
   }catch(err){
     return json({ok:false, error:String(err && err.message || err)});
   }finally{
     lock.releaseLock();
   }
+}
+
+function snapshot(since){
+  return {
+    ok: true,
+    logs: readLogs(since).concat(readBin(since)),
+    config: readConfig(since),
+    maxRev: currentRev(),
+    serverTime: Date.now()
+  };
 }
 
 function json(o){
@@ -635,15 +649,14 @@ function buildReports(){
     if(!tasks[k]) tasks[k] = {code: l.code || k, title: l.title || k, type: l.type, per: {}};
     tasks[k].per[l.person] = (tasks[k].per[l.person] || 0) + 1;
   });
-  styleSheet(logsSheet(), HEAD.length, TECH);
-  styleSheet(binSheet(), BIN_HEAD.length, BIN_TECH);
-
   writeReport('آمار کارها', ['کد','عنوان','نوع'].concat(people).concat(['مجموع']),
     Object.keys(tasks).map(function(k){
       var t = tasks[k], sum = 0;
       var per = people.map(function(p){ var v = t.per[p] || 0; sum += v; return v; });
       return [t.code, t.title, t.type === 'pos' ? 'مثبت' : 'چک‌اوت — منفی'].concat(per).concat([sum]);
     }));
+
+  maybeTidy();      /* عرض ستون‌ها هر چند دقیقه یک‌بار، نه در هر ثبت */
 }
 
 function label(l){ return (l.code ? l.code + ' ' : '') + (l.title || ''); }
@@ -706,8 +719,8 @@ function nearestCheckin(mine, ts){
 }
 
 function writeReport(name, head, rows){
-  var ss = book(), sh = ss.getSheetByName(name);
-  if(!sh) sh = ss.insertSheet(name);
+  var ss = book(), sh = ss.getSheetByName(name), fresh = false;
+  if(!sh){ sh = ss.insertSheet(name); fresh = true; }
   sh.clearContents();                    /* محتوا پاک می‌شود، قالب‌بندی می‌ماند */
   sh.getRange(1, 1, 1, head.length).setValues([head]);
   if(rows.length){
@@ -719,7 +732,25 @@ function writeReport(name, head, rows){
     });
     sh.getRange(2, 1, padded.length, width).setValues(padded);
   }
-  styleSheet(sh, head.length);
+  /* قالب‌بندی روی برگه می‌ماند، پس فقط بار اول لازم است؛ تنظیم دوره‌ای با maybeTidy */
+  if(fresh) styleSheet(sh, head.length);
+}
+
+/**
+ * تنظیم عرض ستون‌ها گران‌ترین کار این اسکریپت است و قفل را نگه می‌دارد.
+ * پس حداکثر هر چند دقیقه یک‌بار اجرا می‌شود — نه در هر ثبت.
+ */
+var TIDY_EVERY_MS = 5 * 60 * 1000;
+function maybeTidy(){
+  try{
+    var props = PropertiesService.getScriptProperties();
+    var last = Number(props.getProperty('tidyAt') || 0);
+    var now = Date.now();
+    if(now - last < TIDY_EVERY_MS) return false;
+    props.setProperty('tidyAt', String(now));
+    tidy();
+    return true;
+  }catch(err){ Logger.log('maybeTidy: ' + err); return false; }
 }
 
 /* ---------------- ابزار دستی ---------------- */

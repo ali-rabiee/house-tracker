@@ -14,7 +14,7 @@ function formatDate(d, tz, pat){
   return map[pat]();
 }
 
-function makeSheet(name){
+function makeSheet(name, stats){
   const cells = [];
   const at = (r, c) => { while (cells.length < r) cells.push([]); const row = cells[r-1]; while (row.length < c) row.push(''); return row; };
   const sheet = {
@@ -31,6 +31,7 @@ function makeSheet(name){
     },
     /* width follows the longest text in the column, the way autofit does */
     autoResizeColumns(start, count){
+      if (stats) stats.resizes++;
       for (let c = start; c < start + count; c++){
         let widest = 0;
         cells.forEach(r => { const v = r[c-1]; if (v != null) widest = Math.max(widest, String(v).length); });
@@ -95,9 +96,10 @@ function makeSheet(name){
 function createGas(codePath){
   const sheets = new Map();
   const props = new Map();
+  const stats = { locks: 0, resizes: 0, lockBusy: false };
   const ss = {
     getSheetByName: n => sheets.get(n) || null,
-    insertSheet: n => { const s = makeSheet(n); sheets.set(n, s); return s; },
+    insertSheet: n => { const s = makeSheet(n, stats); sheets.set(n, s); return s; },
     getSheets: () => [...sheets.values()],
     getSpreadsheetTimeZone: () => 'local',
     toast: () => {}
@@ -117,7 +119,11 @@ function createGas(codePath){
       setProperty: (k, v) => props.set(k, v),
       deleteProperty: k => props.delete(k)
     })},
-    LockService: { getScriptLock: () => ({ waitLock(){}, releaseLock(){} }) },
+    LockService: { getScriptLock: () => ({
+      waitLock(){ stats.locks++; },
+      tryLock(){ stats.locks++; return !stats.lockBusy; },
+      releaseLock(){}
+    })},
     ContentService: {
       MimeType: { JSON: 'json' },
       createTextOutput: t => ({ _t: t, setMimeType(){ return this; }, getContent(){ return this._t; } })
@@ -129,6 +135,7 @@ function createGas(codePath){
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(codePath, 'utf8'), sandbox, { filename: codePath });
   return {
+    stats,
     run(name, ...args){ return sandbox[name](...args); },
     post(body){
       const res = sandbox.doPost({ postData: { contents: JSON.stringify(body) }, parameter: {} });

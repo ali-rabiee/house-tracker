@@ -159,4 +159,45 @@ ok('phones are told to bring it back', !!back && !back.deleted,
    back ? 'deleted=' + back.deleted : 'not sent');
 ok('reports include it again',
    g4.rows('نوبت‌ها').slice(1).some(r => String(r[7]).includes('آشغال')));
+
+
+/* ---- the Sheet must not go "busy" under normal use ---- */
+const g5 = createGas(FILE);
+const t5 = Date.now();
+g5.run('setup');
+
+/* a read is the common case: three phones polling. it must not take the lock,
+   or every poll queues behind whoever is writing and eventually times out. */
+const locksBefore = g5.stats.locks;
+for (let i = 0; i < 5; i++) g5.post({ token: 'khaneh-1404', since: 0 });
+ok('polling reads take no lock at all', g5.stats.locks === locksBefore,
+   'locks taken by 5 reads: ' + (g5.stats.locks - locksBefore));
+
+/* writes still take it, so two phones never interleave a write */
+g5.post({ token: 'khaneh-1404', since: 0,
+          logs: [{ id: 'w1', ts: t5, person: 'علی', type: 'checkin', sess: 'w1' }] });
+ok('a write does take the lock', g5.stats.locks === locksBefore + 1);
+
+/* auto-fit is the slow part; it must not run on every write */
+const resizesBefore = g5.stats.resizes;
+for (let i = 0; i < 6; i++) {
+  g5.post({ token: 'khaneh-1404', since: 0,
+            logs: [{ id: 'w' + i + 'x', ts: t5 + i, person: 'علی', type: 'pos',
+                     taskId: 'P1', code: 'P1', title: 'گل‌ها', sess: 'w1' }] });
+}
+ok('six writes do not re-fit the columns each time', g5.stats.resizes === resizesBefore,
+   'extra auto-fits: ' + (g5.stats.resizes - resizesBefore));
+ok('the tidy action still fits them on demand',
+   (g5.run('tidy'), g5.stats.resizes > resizesBefore));
+
+/* when the lock really is held, the answer is a retryable "busy", not a failure */
+g5.stats.lockBusy = true;
+const busy = g5.post({ token: 'khaneh-1404', since: 0,
+                       logs: [{ id: 'w9', ts: t5, person: 'علی', type: 'checkin', sess: 'w9' }] });
+ok('a contended write answers busy, and says so as retryable',
+   busy.ok === false && busy.busy === true, JSON.stringify(busy).slice(0, 70));
+g5.stats.lockBusy = false;
+const after = g5.post({ token: 'khaneh-1404', since: 0,
+                        logs: [{ id: 'w9', ts: t5, person: 'علی', type: 'checkin', sess: 'w9' }] });
+ok('the retry then succeeds', after.ok === true && after.logs.some(l => l.id === 'w9'));
 done();

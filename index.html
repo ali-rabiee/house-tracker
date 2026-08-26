@@ -1799,8 +1799,18 @@ document.getElementById('btnAddPerson').onclick = () => {
 const SYNC_KEY = 'houseTracker.sync';
 const EMBEDDED = !!(window.claude && typeof window.claude.use === 'function');
 let SY = loadSync();
-let syncSt = {busy:false, err:'', at:0};
-let syncTimer;
+let syncSt = {busy:false, err:'', at:0, queued:false};
+let syncTimer, retryTimer, retries = 0;
+
+/* A busy Sheet is normal when several phones write at once. Back off a little
+   each time rather than hammering it, and never show it as a failure. */
+function retrySoon(){
+  retries = Math.min(retries + 1, 5);
+  syncSt.queued = true;
+  clearTimeout(retryTimer);
+  retryTimer = setTimeout(() => { syncSt.queued = false; doSync(true); },
+                          1500 * retries + Math.random() * 1500);
+}
 
 function loadSync(){
   try{ return Object.assign({url:'', token:''}, JSON.parse(localStorage.getItem(SYNC_KEY)||'{}')); }
@@ -1841,7 +1851,14 @@ async function doSync(quiet, opts){
     });
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const j = await res.json();
+    /* the Sheet is serving someone else right now — not an error, just wait */
+    if(!j.ok && (j.busy || /مشغول|شلوغ|busy/i.test(j.error || ''))){
+      syncSt.err = '';
+      retrySoon();
+      return {ok:false, busy:true};
+    }
     if(!j.ok) throw new Error(j.error || 'پاسخ نامعتبر سرور');
+    retries = 0;
     applyRemote(j, sent, pushCfg);
     syncSt.err = ''; syncSt.at = Date.now();
     save(); render();
@@ -1891,9 +1908,10 @@ function paintSync(){
   if(!el) return;
   if(!syncOn()){ el.style.display='none'; return; }
   el.style.display = '';
-  const pend = anythingDirty();
+  const pend = anythingDirty() || syncSt.queued;
   el.textContent = syncSt.busy ? '⏳ همگام‌سازی…'
     : syncSt.err ? '⚠️ آفلاین'
+    : syncSt.queued ? '⏳ نوبت شلوغ است'
     : pend ? '⏳ در صف'
     : '☁️ همگام';
   el.className = 'who sync ' + (syncSt.err ? 'bad' : pend || syncSt.busy ? 'wait' : 'ok');
@@ -1901,6 +1919,7 @@ function paintSync(){
   if(s){
     s.innerHTML = !syncOn() ? 'وصل نیست.'
       : (syncSt.err ? `<b style="color:var(--bad)">خطا:</b> ${esc(syncSt.err)}`
+         : syncSt.queued ? 'شیت الان مشغول است — خودکار دوباره تلاش می‌شود.'
          : syncSt.at ? `آخرین همگام‌سازی: ${stamp(syncSt.at)}` : 'هنوز همگام نشده.')
         + (pend ? ' • تغییرات ثبت‌نشده در صف است' : '');
   }
