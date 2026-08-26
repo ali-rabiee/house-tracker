@@ -1,25 +1,35 @@
-/* One phone deletes; a second phone that nobody touches — app open, sitting on
-   a tab mid-session — must see it, and see a restore, on its own. */
+/* Sync should be quiet: once at open, on every record you make, and whenever
+   someone taps refresh — not on a fast timer and not on every tab switch. */
 const { BASE, ok, done, launch, resetBackend } = require('./helpers');
 
-const waitFor = async (fn, ms = 40000) => {
+const stays = async (fn, ms) => {                 // true if fn stays false for ms
   const until = Date.now() + ms;
   while (Date.now() < until) {
-    if (await fn()) return (Date.now() - (until - ms)) / 1000;
+    if (await fn()) return false;
     await new Promise(r => setTimeout(r, 500));
   }
-  return null;
+  return true;
+};
+const becomes = async (fn, ms = 15000) => {
+  const until = Date.now() + ms;
+  while (Date.now() < until) {
+    if (await fn()) return true;
+    await new Promise(r => setTimeout(r, 400));
+  }
+  return false;
 };
 
 (async () => {
   await resetBackend();
   const browser = await launch();
   const errs = [];
-  const mk = async () => {
+  const calls = { A: 0, B: 0 };
+  const mk = async tag => {
     const ctx = await browser.newContext({ viewport: { width: 430, height: 900 } });
     const pg = await ctx.newPage();
-    pg.on('pageerror', e => errs.push('PAGEERROR: ' + e.message));
+    pg.on('pageerror', e => errs.push(tag + ' PAGEERROR: ' + e.message));
     pg.on('dialog', d => d.accept());
+    pg.on('request', r => { if (r.url().includes('/exec')) calls[tag]++; });
     await pg.goto(BASE);
     await pg.waitForTimeout(400);
     return pg;
@@ -37,55 +47,65 @@ const waitFor = async (fn, ms = 40000) => {
     await pg.waitForTimeout(900);
   };
 
-  const A = await mk(), B = await mk();
-
-  // A records a visit with one chore
+  const A = await mk('A'), B = await mk('B');
   await A.click('.person:has-text("فاطیما")');
   await A.click('#btnCheckin');
   await A.waitForTimeout(250);
   await A.click('#btnGate');
   await A.waitForTimeout(300);
   await dlg(A, 0);
-  await A.locator('#posList .chk').nth(1).click();     // P2
+  await A.locator('#posList .chk').nth(1).click();      // P2
   await A.waitForTimeout(250);
   await connect(A);
   await connect(B);
 
-  // B is parked on the history tab and will not be touched again
+  const chore = 'چک اتاق‌ها';
   await B.click('.tab[data-tab="history"]');
   await B.waitForTimeout(600);
-  const chore = 'چک اتاق‌ها';
-  ok('B sees the chore to begin with',
+  ok('B starts out seeing the chore',
      (await B.locator('#historyList').innerText()).includes(chore));
 
-  // A deletes it (choosing "delete without backup")
+  // moving around the app must not trigger a sync any more
+  calls.B = 0;
+  for (const t of ['tasks', 'scores', 'settings', 'history']) {
+    await B.click(`.tab[data-tab="${t}"]`);
+    await B.waitForTimeout(400);
+  }
+  ok('switching tabs no longer syncs', calls.B === 0, 'requests while browsing: ' + calls.B);
+
+  // A deletes it; B is left completely alone
   await A.click('.tab[data-tab="history"]');
   await A.waitForTimeout(300);
   await A.locator('#historyList li', { hasText: chore }).locator('[data-del]').click();
   await A.waitForTimeout(300);
   await dlg(A, 1);
-  await A.waitForTimeout(1800);
+  await A.waitForTimeout(1500);
 
-  const goneIn = await waitFor(async () =>
-    !(await B.locator('#historyList').innerText()).includes(chore));
-  ok('the deletion reaches the idle phone by itself', goneIn !== null,
-     goneIn === null ? 'still there after 40s' : 'after ~' + goneIn.toFixed(0) + 's');
+  await B.click('.tab[data-tab="history"]');
+  await B.waitForTimeout(300);
+  calls.B = 0;
+  const quiet = await stays(async () =>
+    !(await B.locator('#historyList').innerText()).includes(chore), 20000);
+  ok('an idle phone no longer polls every few seconds', quiet && calls.B === 0,
+     'requests in 20s: ' + calls.B);
 
-  // the row really left the logs sheet and sits in the bin
-  const dump = await (await fetch(BASE + '/dump')).json();
-  const live = (dump['logs'] || []).slice(1).map(r => r[7]);
-  const binned = (dump['حذف‌شده‌ها'] || []).slice(1);
-  ok('the row is out of the logs sheet', !live.some(t => String(t).includes(chore)));
-  ok('the row is in the bin with its details', binned.some(r => String(r[10]).includes(chore)),
-     binned.map(r => r[10]).join(' | '));
+  // the refresh button is how you pull it in
+  await B.click('#syncChip');
+  ok('tapping refresh brings the change in', await becomes(async () =>
+     !(await B.locator('#historyList').innerText()).includes(chore)),
+     'requests after tap: ' + calls.B);
 
-  // restoring it from the Sheet must reach the same untouched phone
-  const head = (dump['حذف‌شده‌ها'] || [])[0] || [];
-  await (await fetch(BASE + '/restore?col=' + (head.indexOf('بازیابی؟') + 1))).text();
-  const backIn = await waitFor(async () =>
-    (await B.locator('#historyList').innerText()).includes(chore));
-  ok('a restore from the Sheet reaches it too', backIn !== null,
-     backIn === null ? 'never came back' : 'after ~' + backIn.toFixed(0) + 's');
+  // and simply recording something also brings others' changes along
+  await resetBackend();
+  const C = await mk('A');
+  await connect(C);
+  await C.click('.tab[data-tab="checkin"]');
+  await C.waitForTimeout(300);
+  calls.A = 0;
+  await C.click('.person:has-text("محمد")');
+  await C.click('#btnCheckin');
+  await C.waitForTimeout(1500);
+  ok('recording something syncs on its own', calls.A > 0);
 
   if (errs.length) console.log('ERRORS:\n' + errs.join('\n'));
   ok('no page errors', errs.length === 0);

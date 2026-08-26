@@ -62,6 +62,9 @@
     font-size:12px;color:var(--brand-deep);background:var(--sand);
     border:1px solid var(--line);border-radius:999px;padding:4px 11px;white-space:nowrap;
   }
+  .who.sync{font-family:inherit;cursor:pointer;transition:.15s}
+  .who.sync:hover{filter:brightness(.97)}
+  .who.sync:active{transform:scale(.97)}
   .who.sync.ok{background:var(--good-bg);border-color:#C6D9B2;color:#3F5D2A}
   .who.sync.wait{background:var(--gold-bg);border-color:#E3C989;color:#7A5A12}
   .who.sync.bad{background:var(--bad-bg);border-color:#E5C0B3;color:var(--bad)}
@@ -270,7 +273,7 @@
   <div class="brand">
     <h1><span class="em">🏡</span> مراقبت از خانه</h1>
     <div style="display:flex;gap:6px;align-items:center">
-      <span class="who sync" id="syncChip" style="display:none">☁️</span>
+      <button class="who sync" id="syncChip" style="display:none" title="همگام‌سازی دستی">☁️</button>
       <div class="who" id="whoNow">—</div>
     </div>
   </div>
@@ -399,7 +402,12 @@
         <button class="btn" id="btnSyncLink">🔗 کپی لینک آماده برای بقیه</button>
         <button class="btn danger" id="btnSyncOff">قطع اتصال</button>
       </div>
-      <p class="hint" id="syncStatus" style="margin:11px 0 0"></p>
+      <p class="hint" style="margin:11px 0 0">
+        اپ یک بار هنگام باز شدن همگام می‌شود و هر بار که چیزی ثبت می‌کنی
+        (همان ثبت، تغییرات بقیه را هم با خودش می‌آورد).
+        برای گرفتن دستی، روی نشان همگام‌سازی بالای صفحه بزن.
+      </p>
+      <p class="hint" id="syncStatus" style="margin:8px 0 0"></p>
     </div>
 
     <div class="card">
@@ -1767,7 +1775,6 @@ document.getElementById('tabs').onclick = e => {
   document.querySelectorAll('section').forEach(s =>
     s.classList.toggle('on', s.id === 'tab-'+b.dataset.tab));
   S.ui.tab = b.dataset.tab; save();
-  if(syncOn()) doSync(true);
 };
 
 document.getElementById('btnCheckin').onclick = async () => {
@@ -1941,12 +1948,13 @@ function paintSync(){
   if(!el) return;
   if(!syncOn()){ el.style.display='none'; return; }
   el.style.display = '';
+  el.onclick = () => { toast('در حال گرفتن تغییرات…'); wakeSync(); };
   const pend = anythingDirty() || syncSt.queued;
   el.textContent = syncSt.busy ? '⏳ همگام‌سازی…'
     : syncSt.err ? '⚠️ آفلاین'
     : syncSt.queued ? '⏳ نوبت شلوغ است'
     : pend ? '⏳ در صف'
-    : '☁️ همگام';
+    : '🔄 همگام';
   el.className = 'who sync ' + (syncSt.err ? 'bad' : pend || syncSt.busy ? 'wait' : 'ok');
   const s = document.getElementById('syncStatus');
   if(s){
@@ -2008,10 +2016,13 @@ document.getElementById('btnSyncLink').onclick = async () => {
     bindBackupBox(); }
 };
 
-/* Keeping an open app current without burning the script's daily quota:
-   poll briskly while something is actually happening, then back off when the
-   Sheet has been quiet. Any sign of life snaps it back to the fast rate. */
-const POLL_FAST = 15000, POLL_SLOW = 60000, QUIET_BEFORE_SLOW = 4;
+/* The app syncs once when it opens, whenever you record something (that push
+   brings everyone else's changes back with it), and when you ask for it with
+   the refresh button. Left alone, it only checks now and then — and gets
+   slower the longer nothing happens, so a phone parked on a table is quiet. */
+const POLL_BASE = 5 * 60 * 1000;      /* یک بار در هر ۵ دقیقه */
+const POLL_LONG = 15 * 60 * 1000;     /* و بعد از چند دور بی‌خبری، هر ۱۵ دقیقه */
+const QUIET_BEFORE_SLOW = 3;
 let pollTimer, quietPolls = 0;
 
 function schedulePoll(){
@@ -2020,21 +2031,18 @@ function schedulePoll(){
   pollTimer = setTimeout(async () => {
     if(document.visibilityState === 'visible') await doSync(true);
     schedulePoll();
-  }, quietPolls >= QUIET_BEFORE_SLOW ? POLL_SLOW : POLL_FAST);
+  }, quietPolls >= QUIET_BEFORE_SLOW ? POLL_LONG : POLL_BASE);
 }
 
-/* something changed, or the user came back — check now and stay brisk */
+/* a manual refresh, or something worth sending — check now and reset the pace */
 function wakeSync(){
   quietPolls = 0;
   schedulePoll();
   if(document.visibilityState === 'visible') doSync(true);
 }
 
-document.addEventListener('visibilitychange', () => {
-  if(document.visibilityState === 'visible') wakeSync();
-});
-window.addEventListener('focus', wakeSync);
-window.addEventListener('online', wakeSync);
+/* back online with unsent records: get them up, but don't poll just for looking */
+window.addEventListener('online', () => { if(anythingDirty()) wakeSync(); });
 schedulePoll();
 
 /* ---------------- boot ---------------- */
@@ -2057,6 +2065,7 @@ document.documentElement.setAttribute('dir','rtl');
 document.documentElement.setAttribute('lang','fa');
 
 if(!S.people.includes(S.ui.person)) S.ui.person = S.people[0];
+if(syncOn()) doSync(true);        /* یک بار هنگام باز شدن اپ */
 const startTab = document.querySelector(`.tab[data-tab="${S.ui.tab||'checkin'}"]`);
 if(startTab) startTab.click();
 render();
