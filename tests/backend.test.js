@@ -196,6 +196,31 @@ for (let i = 0; i < 62; i++) {
 ok('it does catch up once the write counter comes round', g5.stats.resizes > resizesBefore,
    'auto-fits after ~100 writes: ' + (g5.stats.resizes - resizesBefore));
 
+/* a burst of taps must not rebuild every report each time */
+const g6 = createGas(FILE);
+g6.run('setup');
+let builds = 0;
+const countRow = () => (g6.rows('نوبت‌ها') || []).length;
+g6.post({ token: 'khaneh-1404', since: 0,
+          logs: [{ id: 'r0', ts: Date.now(), person: 'علی', type: 'checkin', sess: 'r0' }] });
+const afterFirst = g6.stats.writes || 0;
+const rowsBefore = countRow();
+for (let i = 1; i <= 5; i++) {
+  g6.post({ token: 'khaneh-1404', since: 0,
+            logs: [{ id: 'r' + i, ts: Date.now() + i, person: 'علی', type: 'pos',
+                     taskId: 'P1', code: 'P1', title: 'گل‌ها', sess: 'r0' }] });
+}
+ok('five quick records do not rebuild the reports each time',
+   countRow() === rowsBefore, 'session rows: ' + rowsBefore + ' -> ' + countRow());
+
+/* ending a visit is the moment reports matter, so that one rebuilds at once */
+g6.post({ token: 'khaneh-1404', since: 0,
+          logs: [{ id: 'rc', ts: Date.now() + 9, person: 'علی', type: 'checkout', sess: 'r0' }] });
+const closed = (g6.rows('نوبت‌ها') || []).slice(1).find(r => r[0] === 'علی') || [];
+ok('a checkout rebuilds them immediately', String(closed[9] || '').indexOf('بسته') === 0,
+   'status: ' + closed[9] + ' | positives: ' + closed[5]);
+ok('and the rebuilt report counts the whole burst', Number(closed[5]) === 5, 'pos=' + closed[5]);
+
 /* the export asks for one explicitly, whatever the counter says */
 const beforeAsk = g5.stats.resizes;
 const asked = g5.post({ token: 'khaneh-1404', since: 0, action: 'tidy' });

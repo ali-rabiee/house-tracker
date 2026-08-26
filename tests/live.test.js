@@ -107,6 +107,26 @@ const becomes = async (fn, ms = 15000) => {
   await C.waitForTimeout(1500);
   ok('recording something syncs on its own', calls.A > 0);
 
+  /* a request that never comes back must not wedge sync for good */
+  await fetch(BASE + '/hang');
+  await C.click('.tab[data-tab="tasks"]');
+  await C.click('#btnGate');
+  await C.waitForTimeout(300);
+  await dlg(C, 0);                                  // this write's request hangs
+  await C.waitForTimeout(2500);
+  const stuckChip = (await C.locator('#syncChip').innerText()).trim();
+
+  await C.click('#syncChip');                       // manual refresh must break it
+  const recovered = await becomes(async () =>
+    /همگام|صف|شلوغ/.test(await C.locator('#syncChip').innerText()), 20000);
+  ok('a hung request does not wedge sync', recovered, 'chip while hung: ' + stuckChip);
+
+  const posted = await becomes(async () => {
+    const d = await (await fetch(BASE + '/dump')).json();
+    return (d['logs'] || []).slice(1).some(r => String(r[6]) === 'HOME');
+  }, 30000);
+  ok('the record still reaches the sheet afterwards', posted);
+
   if (errs.length) console.log('ERRORS:\n' + errs.join('\n'));
   ok('no page errors', errs.length === 0);
   await browser.close();

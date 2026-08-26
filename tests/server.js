@@ -8,6 +8,7 @@ const { createGas } = require('./gas-emu');
 const ROOT = path.join(__dirname, '..');
 const GAS_FILE = path.join(ROOT, 'google-apps-script', 'Code.gs');
 let gas = createGas(GAS_FILE);
+let hangNext = false;
 
 /* the artifact viewer runs the page in a sandboxed iframe without allow-modals */
 const SANDBOX_PAGE = `<!doctype html><meta charset="utf-8"><title>sandboxed</title>
@@ -15,7 +16,13 @@ const SANDBOX_PAGE = `<!doctype html><meta charset="utf-8"><title>sandboxed</tit
         src="/"></iframe>`;
 
 const server = http.createServer((req, res) => {
+  if (req.url.startsWith('/hang')) {           /* next /exec never answers, like a dead mobile link */
+    hangNext = true;
+    res.end('ok');
+    return;
+  }
   if (req.url.startsWith('/exec')) {
+    if (hangNext) { hangNext = false; return; }   /* deliberately leave it open */
     let body = '';
     req.on('data', c => body += c);
     req.on('end', () => {

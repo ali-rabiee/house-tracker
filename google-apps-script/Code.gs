@@ -73,7 +73,7 @@ function setup(){
 
 /** گزارش‌ها را از روی logs دوباره می‌سازد (بدون دست زدن به ثبت‌ها). */
 function rebuild(){
-  buildReports();
+  maybeReports(true);
   SpreadsheetApp.flush();
   try{ book().toast('گزارش‌ها بازسازی شد', 'مراقبت از خانه', 6); }catch(err){}
   return 'OK';
@@ -202,7 +202,7 @@ function handle(e, body){
   if(body && body.action === 'tidy'){
     var tl = LockService.getScriptLock();
     if(!tl.tryLock(10000)) return json({ok:false, busy:true, error:'شلوغ است، چند لحظهٔ دیگر دوباره تلاش می‌شود'});
-    try{ tidy(); return json(snapshot(since)); }
+    try{ maybeReports(true); tidy(); return json(snapshot(since)); }
     catch(err){ return json({ok:false, error:String(err && err.message || err)}); }
     finally{ tl.releaseLock(); }
   }
@@ -215,7 +215,10 @@ function handle(e, body){
   try{
     if(body.logs && body.logs.length) upsertLogs(body.logs);
     if(body.config) writeConfig(body.config);
-    buildReports();
+    /* ثبتِ خودِ رکورد باید سریع باشد؛ گزارش‌ها داده‌های مشتق‌شده‌اند و
+       چند ثانیه عقب‌تر بودنشان اشکالی ندارد — مگر پایان یک نوبت. */
+    maybeReports(needsReportNow(body.logs));
+    maybeTidy();          /* شمارندهٔ ثبت‌ها؛ عرض ستون‌ها را دیر به دیر مرتب می‌کند */
     return json(snapshot(since));
   }catch(err){
     return json({ok:false, error:String(err && err.message || err)});
@@ -669,7 +672,6 @@ function buildReports(){
       return [t.code, t.title, t.type === 'pos' ? 'مثبت' : 'چک‌اوت — منفی'].concat(per).concat([sum]);
     }));
 
-  maybeTidy();      /* عرض ستون‌ها هر چند دقیقه یک‌بار، نه در هر ثبت */
 }
 
 function label(l){ return (l.code ? l.code + ' ' : '') + (l.title || ''); }
@@ -755,6 +757,39 @@ function writeReport(name, head, rows){
  * عجله‌ای نیست — متن‌ها به هر حال داخل خانه می‌شکنند و بیرون نمی‌زنند.
  * هر وقت خودت بخواهی: منوی شیت ← «مرتب کردن ستون‌ها»، و پیش از هر خروجی اکسل.
  */
+/**
+ * بازسازی گزارش‌ها هر بار که کسی چیزی ثبت می‌کند، هر ثبت را کند می‌کرد و
+ * اپ روی «در حال همگام‌سازی» می‌ماند. گزارش‌ها مشتق‌شده‌اند، پس حداکثر
+ * هر یک دقیقه ساخته می‌شوند — و پایان هر نوبت (چک‌اوت) فوراً.
+ */
+var REPORTS_EVERY_MS = 60 * 1000;
+
+/** پایان نوبت یا حذف یک رکورد — لحظه‌هایی که گزارش باید فوراً درست شود */
+function needsReportNow(logs){
+  if(!logs) return false;
+  for(var i = 0; i < logs.length; i++){
+    var l = logs[i];
+    if(l && (l.type === 'checkout' || l.deleted)) return true;
+  }
+  return false;
+}
+
+function maybeReports(force){
+  try{
+    var props = PropertiesService.getScriptProperties();
+    var last = Number(props.getProperty('reportsAt') || 0);
+    var now = Date.now();
+    if(!force && last && (now - last) < REPORTS_EVERY_MS){
+      props.setProperty('reportsDue', '1');      /* دفعهٔ بعد حتماً ساخته می‌شود */
+      return false;
+    }
+    props.setProperty('reportsAt', String(now));
+    props.setProperty('reportsDue', '0');
+    buildReports();
+    return true;
+  }catch(err){ Logger.log('maybeReports: ' + err); return false; }
+}
+
 var TIDY_EVERY_WRITES = 100;
 var TIDY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 

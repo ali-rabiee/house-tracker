@@ -1874,21 +1874,34 @@ function wireLog(l){
           by:l.by||'', sess:sessionOf(l), deleted:!!l.deleted};
 }
 
+const SYNC_TIMEOUT = 20000;
+
 async function doSync(quiet, opts){
-  if(!syncOn() || syncSt.busy) return {ok:false};
-  syncSt.busy = true; paintSync();
+  if(!syncOn()) return {ok:false};
+  /* a request that never came back must not block every later sync */
+  if(syncSt.busy){
+    if(Date.now() - (syncSt.startedAt || 0) < SYNC_TIMEOUT + 5000) return {ok:false};
+    syncSt.busy = false;
+  }
+  syncSt.busy = true; syncSt.startedAt = Date.now(); paintSync();
   const sent = dirtyLogs().map(l => ({id:l.id, at:l.updatedAt}));
   /* on a first connect we adopt the Sheet's task list instead of overwriting it */
   const pushCfg = S.configDirty && !(opts && opts.noConfig);
   try{
     const payload = {token:SY.token, since:S.rev||0, logs:dirtyLogs().map(wireLog)};
     if(pushCfg) payload.config = {people:S.people, pos:S.pos, neg:S.neg};
-    const res = await fetch(SY.url, {
-      method:'POST',
-      headers:{'Content-Type':'text/plain;charset=utf-8'},  /* keeps it a simple request — no CORS preflight */
-      body: JSON.stringify(payload),
-      redirect:'follow'
-    });
+    const stop = new AbortController();
+    const bell = setTimeout(() => stop.abort(), SYNC_TIMEOUT);
+    let res;
+    try{
+      res = await fetch(SY.url, {
+        method:'POST',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},  /* keeps it a simple request — no CORS preflight */
+        body: JSON.stringify(payload),
+        redirect:'follow',
+        signal: stop.signal
+      });
+    }finally{ clearTimeout(bell); }
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const j = await res.json();
     /* the Sheet is serving someone else right now — not an error, just wait */
@@ -1904,6 +1917,11 @@ async function doSync(quiet, opts){
     save(); render();
     return {ok:true, hadConfig: !!j.config};
   }catch(e){
+    if(e && e.name === 'AbortError'){          /* شیت دیر جواب داد — خودش دوباره تلاش می‌کند */
+      syncSt.err = '';
+      retrySoon();
+      return {ok:false, busy:true};
+    }
     syncSt.err = (e && e.message) || 'خطای شبکه';
     if(!quiet) toast('همگام‌سازی نشد: ' + syncSt.err);
     paintSync();
@@ -1948,7 +1966,11 @@ function paintSync(){
   if(!el) return;
   if(!syncOn()){ el.style.display='none'; return; }
   el.style.display = '';
-  el.onclick = () => { toast('در حال گرفتن تغییرات…'); wakeSync(); };
+  el.onclick = () => {
+    if(syncSt.busy && Date.now() - (syncSt.startedAt || 0) > 4000) syncSt.busy = false;  /* تلاش گیرکرده را رها کن */
+    toast('در حال گرفتن تغییرات…');
+    wakeSync();
+  };
   const pend = anythingDirty() || syncSt.queued;
   el.textContent = syncSt.busy ? '⏳ همگام‌سازی…'
     : syncSt.err ? '⚠️ آفلاین'
