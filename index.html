@@ -1833,8 +1833,16 @@ let syncTimer, retryTimer, retries = 0;
 
 /* A busy Sheet is normal when several phones write at once. Back off a little
    each time rather than hammering it, and never show it as a failure. */
-function retrySoon(){
-  retries = Math.min(retries + 1, 5);
+const MAX_RETRIES = 5;
+function retrySoon(why){
+  retries += 1;
+  if(retries > MAX_RETRIES){        /* بعد از چند تلاش، دیگر پنهانش نکن */
+    syncSt.queued = false;
+    syncSt.err = why || 'شیت جواب نداد';
+    retries = 0;
+    paintSync();
+    return;
+  }
   syncSt.queued = true;
   clearTimeout(retryTimer);
   retryTimer = setTimeout(() => { syncSt.queued = false; doSync(true); },
@@ -1907,19 +1915,20 @@ async function doSync(quiet, opts){
     /* the Sheet is serving someone else right now — not an error, just wait */
     if(!j.ok && (j.busy || /مشغول|شلوغ|busy/i.test(j.error || ''))){
       syncSt.err = '';
-      retrySoon();
+      retrySoon(j.error || 'شیت مشغول است');
       return {ok:false, busy:true};
     }
     if(!j.ok) throw new Error(j.error || 'پاسخ نامعتبر سرور');
-    retries = 0;
     applyRemote(j, sent, pushCfg);
     syncSt.err = ''; syncSt.at = Date.now();
+    syncSt.queued = false; retries = 0;      /* هر تلاش موفق، حالت «شلوغ» را پاک می‌کند */
+    clearTimeout(retryTimer);
     save(); render();
     return {ok:true, hadConfig: !!j.config};
   }catch(e){
     if(e && e.name === 'AbortError'){          /* شیت دیر جواب داد — خودش دوباره تلاش می‌کند */
       syncSt.err = '';
-      retrySoon();
+      retrySoon('شیت دیر جواب داد');
       return {ok:false, busy:true};
     }
     syncSt.err = (e && e.message) || 'خطای شبکه';

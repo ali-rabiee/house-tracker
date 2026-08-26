@@ -107,6 +107,23 @@ const becomes = async (fn, ms = 15000) => {
   await C.waitForTimeout(1500);
   ok('recording something syncs on its own', calls.A > 0);
 
+  /* one busy answer must not pin the indicator on "busy" for good */
+  await C.waitForTimeout(1500);                      // let any pending sync settle first
+  await fetch(BASE + '/busy?n=2');                   // two busy answers in a row
+  await C.click('#syncChip');                        // ask for a sync; it gets them
+  const seen = new Set();
+  for (let i = 0; i < 40; i++) {                     // watch the indicator as it goes
+    seen.add((await C.locator('#syncChip').innerText()).trim());
+    await C.waitForTimeout(100);
+  }
+  ok('a busy answer shows as queued while it retries',
+     [...seen].some(t => /شلوغ|صف|همگام‌سازی/.test(t)), [...seen].join(' → '));
+
+  const cleared = await becomes(async () =>
+    /🔄 همگام/.test(await C.locator('#syncChip').innerText()), 25000);
+  ok('and clears itself once the retry succeeds', cleared,
+     'chip: ' + (await C.locator('#syncChip').innerText()).trim());
+
   /* a request that never comes back must not wedge sync for good */
   await fetch(BASE + '/hang');
   await C.click('.tab[data-tab="tasks"]');

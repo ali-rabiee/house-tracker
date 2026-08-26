@@ -9,6 +9,7 @@ const ROOT = path.join(__dirname, '..');
 const GAS_FILE = path.join(ROOT, 'google-apps-script', 'Code.gs');
 let gas = createGas(GAS_FILE);
 let hangNext = false;
+let busyNext = 0;
 
 /* the artifact viewer runs the page in a sandboxed iframe without allow-modals */
 const SANDBOX_PAGE = `<!doctype html><meta charset="utf-8"><title>sandboxed</title>
@@ -16,6 +17,11 @@ const SANDBOX_PAGE = `<!doctype html><meta charset="utf-8"><title>sandboxed</tit
         src="/"></iframe>`;
 
 const server = http.createServer((req, res) => {
+  if (req.url.startsWith('/busy')) {           /* answer the next /exec as "busy" once */
+    busyNext = Number(new URL(req.url, 'http://x').searchParams.get('n') || 1);
+    res.end('ok');
+    return;
+  }
   if (req.url.startsWith('/hang')) {           /* next /exec never answers, like a dead mobile link */
     hangNext = true;
     res.end('ok');
@@ -23,6 +29,12 @@ const server = http.createServer((req, res) => {
   }
   if (req.url.startsWith('/exec')) {
     if (hangNext) { hangNext = false; return; }   /* deliberately leave it open */
+    if (busyNext > 0) {
+      busyNext--;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ ok: false, busy: true, error: 'شلوغ است' }));
+      return;
+    }
     let body = '';
     req.on('data', c => body += c);
     req.on('end', () => {

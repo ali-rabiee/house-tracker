@@ -207,9 +207,9 @@ function handle(e, body){
     finally{ tl.releaseLock(); }
   }
 
+  /* نوشتن‌ها کوتاه‌اند، پس کمی صبر کردن برای نوبت بهتر از پس زدن است */
   var lock = LockService.getScriptLock();
-  if(!lock.tryLock(10000)){
-    /* صف شلوغ است — اپ خودش کمی بعد دوباره تلاش می‌کند و چیزی از دست نمی‌رود */
+  if(!lock.tryLock(20000)){
     return json({ok:false, busy:true, error:'شلوغ است، چند لحظهٔ دیگر دوباره تلاش می‌شود'});
   }
   try{
@@ -218,7 +218,6 @@ function handle(e, body){
     /* ثبتِ خودِ رکورد باید سریع باشد؛ گزارش‌ها داده‌های مشتق‌شده‌اند و
        چند ثانیه عقب‌تر بودنشان اشکالی ندارد — مگر پایان یک نوبت. */
     maybeReports(needsReportNow(body.logs));
-    maybeTidy();          /* شمارندهٔ ثبت‌ها؛ عرض ستون‌ها را دیر به دیر مرتب می‌کند */
     return json(snapshot(since));
   }catch(err){
     return json({ok:false, error:String(err && err.message || err)});
@@ -268,10 +267,8 @@ function logsSheet(){
   var ss = book(), sh = ss.getSheetByName(LOGS_SHEET);
   if(!sh){
     sh = ss.insertSheet(LOGS_SHEET);
-    sh.getRange(1, 1, 1, HEAD.length).setValues([HEAD])
-      .setFontWeight('bold').setBackground('#8A5A34').setFontColor('#FFF8EE');
-    sh.setFrozenRows(1);
-    sh.setRightToLeft(true);
+    sh.getRange(1, 1, 1, HEAD.length).setValues([HEAD]);
+    styleSheet(sh, HEAD.length, TECH);      /* یک بار، موقع ساخته شدن */
   }
   return sh;
 }
@@ -280,8 +277,7 @@ function binSheet(){
   if(!sh){
     sh = ss.insertSheet(BIN_SHEET);
     sh.getRange(1, 1, 1, BIN_HEAD.length).setValues([BIN_HEAD]);
-    sh.setFrozenRows(1);
-    sh.setRightToLeft(true);
+    styleSheet(sh, BIN_HEAD.length, BIN_TECH);
   }
   return sh;
 }
@@ -747,7 +743,8 @@ function writeReport(name, head, rows){
     });
     sh.getRange(2, 1, padded.length, width).setValues(padded);
   }
-  /* قالب‌بندی روی برگه می‌ماند، پس فقط بار اول لازم است؛ تنظیم دوره‌ای با maybeTidy */
+  /* قالب‌بندی روی برگه می‌ماند، پس فقط بار اول لازم است؛
+     مرتب کردن عرض ستون‌ها فقط از منو یا پیش از خروجی اکسل انجام می‌شود */
   if(fresh) styleSheet(sh, head.length);
 }
 
@@ -790,22 +787,7 @@ function maybeReports(force){
   }catch(err){ Logger.log('maybeReports: ' + err); return false; }
 }
 
-var TIDY_EVERY_WRITES = 100;
-var TIDY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
-function maybeTidy(){
-  try{
-    var props = PropertiesService.getScriptProperties();
-    var n = Number(props.getProperty('writes') || 0) + 1;
-    var last = Number(props.getProperty('tidyAt') || 0);
-    var now = Date.now();
-    var due = n >= TIDY_EVERY_WRITES || !last || (now - last) >= TIDY_MAX_AGE_MS;
-    if(!due){ props.setProperty('writes', String(n)); return false; }
-    props.setProperty('writes', '0');
-    tidy();
-    return true;
-  }catch(err){ Logger.log('maybeTidy: ' + err); return false; }
-}
 
 /* ---------------- ابزار دستی ---------------- */
 

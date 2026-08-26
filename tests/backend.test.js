@@ -67,6 +67,9 @@ g3.post({ token: 'khaneh-1404', since: 0, logs: [
   { id: 'k3', ts: now + 1, person: 'فاطیما', type: 'checkout', sess: 'k1' }
 ], config: { people: ['علی', 'فاطیما', 'محمد'], pos: [], neg: [] } });
 
+/* recording no longer fits columns — that is what the export and the menu do */
+g3.run('tidy');
+
 const REPORTS = ['نوبت‌ها', 'خلاصهٔ افراد', 'روزانه', 'آمار کارها'];
 for (const name of ['logs'].concat(REPORTS)) {
   const sh = g3.sheet(name);
@@ -188,13 +191,13 @@ for (let i = 0; i < 40; i++) {
 ok('40 writes never re-fit the columns', g5.stats.resizes === resizesBefore,
    'extra auto-fits: ' + (g5.stats.resizes - resizesBefore));
 
-for (let i = 0; i < 62; i++) {
+for (let i = 0; i < 120; i++) {
   g5.post({ token: 'khaneh-1404', since: 0,
             logs: [{ id: 'v' + i, ts: t5 + i, person: 'علی', type: 'pos',
                      taskId: 'P2', code: 'P2', title: 'اتاق‌ها', sess: 'w1' }] });
 }
-ok('it does catch up once the write counter comes round', g5.stats.resizes > resizesBefore,
-   'auto-fits after ~100 writes: ' + (g5.stats.resizes - resizesBefore));
+ok('recording never fits columns, however many records pile up',
+   g5.stats.resizes === resizesBefore, 'auto-fits over 160 writes: ' + (g5.stats.resizes - resizesBefore));
 
 /* a burst of taps must not rebuild every report each time */
 const g6 = createGas(FILE);
