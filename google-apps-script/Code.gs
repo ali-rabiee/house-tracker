@@ -143,7 +143,11 @@ function tidy(){
     if(sh) styleSheet(sh, Math.max(sh.getLastColumn(), 1));
   });
   SpreadsheetApp.flush();
-  try{ PropertiesService.getScriptProperties().setProperty('tidyAt', String(Date.now())); }catch(err){}
+  try{
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty('tidyAt', String(Date.now()));
+    props.setProperty('writes', '0');
+  }catch(err){}
   try{ ss.toast('ستون‌ها مرتب شد', 'مراقبت از خانه', 6); }catch(err){}
   return 'OK';
 }
@@ -185,13 +189,22 @@ function handle(e, body){
   if(TOKEN && token !== TOKEN) return json({ok:false, error:'رمز اشتباه است'});
 
   var since = Number((body && body.since) || (e && e.parameter && e.parameter.since) || 0);
-  var writes = !!(body && ((body.logs && body.logs.length) || body.config));
+  var writes = !!(body && ((body.logs && body.logs.length) || body.config || body.action === 'tidy'));
 
   /* گوشی‌ها بیشتر وقت‌ها فقط می‌خوانند. خواندن قفل نمی‌گیرد، وگرنه پشت
      نوشتن‌ها صف می‌بندد و بعد از مدتی «سرور مشغول است» می‌گیرد. */
   if(!writes){
     try{ return json(snapshot(since)); }
     catch(err){ return json({ok:false, error:String(err && err.message || err)}); }
+  }
+
+  /* اپ پیش از گرفتن خروجی اکسل این را صدا می‌زند تا شیت هم مرتب باشد */
+  if(body && body.action === 'tidy'){
+    var tl = LockService.getScriptLock();
+    if(!tl.tryLock(10000)) return json({ok:false, busy:true, error:'شلوغ است، چند لحظهٔ دیگر دوباره تلاش می‌شود'});
+    try{ tidy(); return json(snapshot(since)); }
+    catch(err){ return json({ok:false, error:String(err && err.message || err)}); }
+    finally{ tl.releaseLock(); }
   }
 
   var lock = LockService.getScriptLock();
@@ -737,17 +750,23 @@ function writeReport(name, head, rows){
 }
 
 /**
- * تنظیم عرض ستون‌ها گران‌ترین کار این اسکریپت است و قفل را نگه می‌دارد.
- * پس حداکثر هر چند دقیقه یک‌بار اجرا می‌شود — نه در هر ثبت.
+ * تنظیم عرض ستون‌ها گران‌ترین کار این اسکریپت است و قفل را نگه می‌دارد،
+ * پس دیر به دیر انجام می‌شود: هر ۱۰۰ ثبت، یا اگر یک شبانه‌روز از آخرین بار گذشته باشد.
+ * عجله‌ای نیست — متن‌ها به هر حال داخل خانه می‌شکنند و بیرون نمی‌زنند.
+ * هر وقت خودت بخواهی: منوی شیت ← «مرتب کردن ستون‌ها»، و پیش از هر خروجی اکسل.
  */
-var TIDY_EVERY_MS = 5 * 60 * 1000;
+var TIDY_EVERY_WRITES = 100;
+var TIDY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
 function maybeTidy(){
   try{
     var props = PropertiesService.getScriptProperties();
+    var n = Number(props.getProperty('writes') || 0) + 1;
     var last = Number(props.getProperty('tidyAt') || 0);
     var now = Date.now();
-    if(now - last < TIDY_EVERY_MS) return false;
-    props.setProperty('tidyAt', String(now));
+    var due = n >= TIDY_EVERY_WRITES || !last || (now - last) >= TIDY_MAX_AGE_MS;
+    if(!due){ props.setProperty('writes', String(n)); return false; }
+    props.setProperty('writes', '0');
     tidy();
     return true;
   }catch(err){ Logger.log('maybeTidy: ' + err); return false; }

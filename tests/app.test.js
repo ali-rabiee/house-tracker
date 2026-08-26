@@ -71,6 +71,7 @@ const { BASE, ok, done, launch } = require('./helpers');
   await page.click('#btnExcel');
   const file = await dl;
   ok('excel file downloads', /\.xlsx$/.test(file.suggestedFilename()), file.suggestedFilename());
+  await file.saveAs('/tmp/house-export.xlsx');
 
   ok('no native browser dialog was used', native === 0, 'native=' + native);
   if (errs.length) console.log('ERRORS:\n' + errs.join('\n'));

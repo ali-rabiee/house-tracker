@@ -1440,13 +1440,30 @@ function colName(i){ /* 0 -> A */
   do{ s = String.fromCharCode(65 + (i % 26)) + s; i = Math.floor(i/26) - 1; }while(i >= 0);
   return s;
 }
+/* Excel's width unit is roughly one character, so measure the longest cell
+   in each column and clamp it — the same rule the Sheet uses. */
+function autoWidths(rows){
+  const cols = rows.reduce((m, r) => Math.max(m, r.length), 0);
+  const w = [];
+  for(let c = 0; c < cols; c++){
+    let longest = 0;
+    for(const r of rows){
+      const v = r[c];
+      if(v == null) continue;
+      for(const line of String(v).split('\n')) longest = Math.max(longest, line.length);
+    }
+    w.push(Math.min(46, Math.max(9, longest + 2)));
+  }
+  return w;
+}
+
 function sheetXml(rows, widths){
   const cols = widths ? `<cols>${widths.map((w,i)=>
     `<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join('')}</cols>` : '';
   const body = rows.map((row, r) => {
     const cells = row.map((cell, c) => {
       const ref = colName(c) + (r+1);
-      const style = r===0 ? ' s="1"' : '';
+      const style = r===0 ? ' s="1"' : ' s="2"';   /* header, then wrapped data */
       if(typeof cell === 'number' && isFinite(cell)) return `<c r="${ref}"${style}><v>${cell}</v></c>`;
       const txt = String(cell==null ? '' : cell);
       if(txt === '') return `<c r="${ref}"${style}/>`;
@@ -1467,7 +1484,7 @@ function buildXlsx(sheets){
 <fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF8A5A34"/><bgColor indexed="64"/></patternFill></fill></fills>
 <borders count="1"><border/></borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs>
+<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center" horizontal="center" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
 
@@ -1622,14 +1639,19 @@ function fileStamp(){
 async function exportExcel(quiet){
   if(!L().length){ if(!quiet) toast('هنوز چیزی ثبت نشده'); return; }
   const hist = historyRows();
-  const book = buildXlsx([
-    {name:'تاریخچه', rows:hist, widths:[6,13,7,10,10,16,8,26,40,10,10,18,20,10,14,14]},
-    {name:'نوبت‌ها', rows:sessionRows(), widths:[10,13,10,10,11,10,10,40,40,17]},
-    {name:'خلاصهٔ افراد', rows:scoreRows(), widths:[12,11,11,12,12,10,12,15,18,18]},
-    {name:'روزانه', rows:dailyRows(), widths:[13,12,11,11,9,9]},
-    {name:'آمار کارها', rows:matrixRows(), widths:[8,28,16,10,10,10,9]},
-    {name:'کارها', rows:taskRows(), widths:[8,20,28,46]}
-  ]);
+  /* every sheet is sized from its own content, so the file is tidy on open */
+  const sheets = [
+    {name:'تاریخچه', rows:hist},
+    {name:'نوبت‌ها', rows:sessionRows()},
+    {name:'خلاصهٔ افراد', rows:scoreRows()},
+    {name:'روزانه', rows:dailyRows()},
+    {name:'آمار کارها', rows:matrixRows()},
+    {name:'کارها', rows:taskRows()}
+  ].map(s => Object.assign(s, {widths: autoWidths(s.rows)}));
+  const book = buildXlsx(sheets);
+
+  /* and while we're at it, ask the Sheet to tidy itself too */
+  if(syncOn()) tidySheet();
   const base = 'house-tracker-' + fileStamp();
   const r = await offerFile([
     {filename: base + '.xlsx', data: book},
@@ -1826,6 +1848,17 @@ function queueSync(){
   quietPolls = 0;
   clearTimeout(syncTimer);
   syncTimer = setTimeout(() => doSync(), 1200);
+}
+
+/* asks the Sheet to re-fit its columns — fire and forget, never blocks a download */
+function tidySheet(){
+  if(!syncOn()) return;
+  fetch(SY.url, {
+    method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({token:SY.token, since:S.rev||0, action:'tidy'}),
+    redirect:'follow'
+  }).catch(() => {});
 }
 
 function wireLog(l){

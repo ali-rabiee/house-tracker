@@ -178,17 +178,30 @@ g5.post({ token: 'khaneh-1404', since: 0,
           logs: [{ id: 'w1', ts: t5, person: 'علی', type: 'checkin', sess: 'w1' }] });
 ok('a write does take the lock', g5.stats.locks === locksBefore + 1);
 
-/* auto-fit is the slow part; it must not run on every write */
+/* auto-fit is the slow part; it must stay off the write path for a long while */
 const resizesBefore = g5.stats.resizes;
-for (let i = 0; i < 6; i++) {
+for (let i = 0; i < 40; i++) {
   g5.post({ token: 'khaneh-1404', since: 0,
             logs: [{ id: 'w' + i + 'x', ts: t5 + i, person: 'علی', type: 'pos',
                      taskId: 'P1', code: 'P1', title: 'گل‌ها', sess: 'w1' }] });
 }
-ok('six writes do not re-fit the columns each time', g5.stats.resizes === resizesBefore,
+ok('40 writes never re-fit the columns', g5.stats.resizes === resizesBefore,
    'extra auto-fits: ' + (g5.stats.resizes - resizesBefore));
-ok('the tidy action still fits them on demand',
-   (g5.run('tidy'), g5.stats.resizes > resizesBefore));
+
+for (let i = 0; i < 62; i++) {
+  g5.post({ token: 'khaneh-1404', since: 0,
+            logs: [{ id: 'v' + i, ts: t5 + i, person: 'علی', type: 'pos',
+                     taskId: 'P2', code: 'P2', title: 'اتاق‌ها', sess: 'w1' }] });
+}
+ok('it does catch up once the write counter comes round', g5.stats.resizes > resizesBefore,
+   'auto-fits after ~100 writes: ' + (g5.stats.resizes - resizesBefore));
+
+/* the export asks for one explicitly, whatever the counter says */
+const beforeAsk = g5.stats.resizes;
+const asked = g5.post({ token: 'khaneh-1404', since: 0, action: 'tidy' });
+ok('an on-demand tidy request fits them immediately',
+   asked.ok === true && g5.stats.resizes > beforeAsk);
+ok('the menu action still works too', (g5.run('tidy'), true));
 
 /* when the lock really is held, the answer is a retryable "busy", not a failure */
 g5.stats.lockBusy = true;
