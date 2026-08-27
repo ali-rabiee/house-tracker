@@ -97,6 +97,7 @@ function createGas(codePath){
   const sheets = new Map();
   const props = new Map();
   const stats = { locks: 0, resizes: 0, lockBusy: false };
+  const triggers = [];
   const ss = {
     getSheetByName: n => sheets.get(n) || null,
     insertSheet: n => { const s = makeSheet(n, stats); sheets.set(n, s); return s; },
@@ -114,7 +115,13 @@ function createGas(codePath){
       BandingTheme: { LIGHT_GREY: 'LIGHT_GREY' }
     },
     Logger: { log: () => {} },
-    ScriptApp: { getScriptId: () => 'SCRIPT_ID_FAKE' },
+    ScriptApp: {
+      getScriptId: () => 'SCRIPT_ID_FAKE',
+      getProjectTriggers: () => triggers,
+      newTrigger: fn => ({ timeBased: () => ({ everyMinutes: () => ({
+        create: () => { triggers.push({ getHandlerFunction: () => fn }); }
+      })})})
+    },
     PropertiesService: { getScriptProperties: () => ({
       getProperty: k => (props.has(k) ? props.get(k) : null),
       setProperty: (k, v) => props.set(k, v),
@@ -144,6 +151,7 @@ function createGas(codePath){
     },
     sheetNames(){ return [...sheets.keys()]; },
     sheet(name){ return sheets.get(name) || null; },
+    triggers(){ return triggers.map(t => t.getHandlerFunction()); },
     rows(name){
       const s = sheets.get(name);
       if (!s) return null;

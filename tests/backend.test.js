@@ -199,6 +199,33 @@ for (let i = 0; i < 120; i++) {
 ok('recording never fits columns, however many records pile up',
    g5.stats.resizes === resizesBefore, 'auto-fits over 160 writes: ' + (g5.stats.resizes - resizesBefore));
 
+/* an ordinary record must not rebuild reports at all — that work is what made
+   writes slow enough to blow the lock wait and the client timeout */
+const g7 = createGas(FILE);
+g7.run('setup');
+ok('setup installs the periodic rebuild trigger', g7.triggers().includes('rebuild'),
+   g7.triggers().join(',') || 'none');
+const many = [];
+for (let i = 0; i < 100; i++) {
+  many.push({ id: 'm' + i, ts: Date.now() - i * 60000, person: 'علی', type: 'pos',
+              taskId: 'P1', code: 'P1', title: 'گل‌ها', sess: 'ms' });
+}
+g7.post({ token: 'khaneh-1404', since: 0, logs: many });
+const sessRows = () => (g7.rows('نوبت‌ها') || []).length;
+const beforeTap = sessRows();
+g7.stats.resizes = 0;
+g7.post({ token: 'khaneh-1404', since: 0,
+          logs: [{ id: 'tap', ts: Date.now(), person: 'علی', type: 'pos',
+                   taskId: 'P2', code: 'P2', title: 'اتاق', sess: 'ms' }] });
+ok('one more record rebuilds nothing and fits nothing',
+   sessRows() === beforeTap && g7.stats.resizes === 0);
+ok('the reply reports how long the server took',
+   typeof g7.post({ token: 'khaneh-1404', since: 0 }).ms === 'number');
+
+/* the trigger is what catches the reports up */
+ok('the periodic rebuild brings them up to date',
+   (g7.run('rebuild') === 'OK') && (g7.rows('نوبت‌ها') || []).length >= 1);
+
 /* a burst of taps must not rebuild every report each time */
 const g6 = createGas(FILE);
 g6.run('setup');
@@ -223,6 +250,14 @@ const closed = (g6.rows('نوبت‌ها') || []).slice(1).find(r => r[0] === '�
 ok('a checkout rebuilds them immediately', String(closed[9] || '').indexOf('بسته') === 0,
    'status: ' + closed[9] + ' | positives: ' + closed[5]);
 ok('and the rebuilt report counts the whole burst', Number(closed[5]) === 5, 'pos=' + closed[5]);
+
+/* a deletion is rare but important, so it still refreshes the reports at once */
+g6.post({ token: 'khaneh-1404', since: 0,
+          logs: [{ id: 'r2', ts: Date.now(), person: 'علی', type: 'pos', sess: 'r0', deleted: true }] });
+const afterDel = (g6.rows('نوبت‌ها') || []).slice(1).find(r => r[0] === 'علی') || [];
+ok('a deletion still updates the reports at once',
+   !(g6.rows('logs') || []).slice(1).some(r => r[0] === 'r2') && Number(afterDel[5]) === 4,
+   'pos after delete: ' + afterDel[5]);
 
 /* the export asks for one explicitly, whatever the counter says */
 const beforeAsk = g5.stats.resizes;

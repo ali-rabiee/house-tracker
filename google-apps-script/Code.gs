@@ -61,6 +61,7 @@ function setup(){
   configSheet();
   binSheet();
   buildReports();
+  ensureTrigger();
   tidy();
   SpreadsheetApp.flush();                  /* تا تغییرات فوراً در شیت دیده شود */
   var names = [];
@@ -71,12 +72,33 @@ function setup(){
   return msg;
 }
 
-/** گزارش‌ها را از روی logs دوباره می‌سازد (بدون دست زدن به ثبت‌ها). */
+/**
+ * گزارش‌ها را از روی logs دوباره می‌سازد. هم از منو صدا زده می‌شود و هم
+ * هر ۵ دقیقه توسط تریگر زمانی — تا ساختنشان روی دوشِ ثبت‌های کاربر نیفتد.
+ */
 function rebuild(){
-  maybeReports(true);
-  SpreadsheetApp.flush();
-  try{ book().toast('گزارش‌ها بازسازی شد', 'مراقبت از خانه', 6); }catch(err){}
-  return 'OK';
+  var lock = LockService.getScriptLock();
+  var got = false;
+  try{ got = lock.tryLock(10000); }catch(err){ got = false; }
+  if(!got) return 'BUSY';                       /* دفعهٔ بعد، پنج دقیقهٔ دیگر */
+  try{
+    buildReports();
+    SpreadsheetApp.flush();
+    try{ book().toast('گزارش‌ها بازسازی شد', 'مراقبت از خانه', 6); }catch(err){}
+    return 'OK';
+  }finally{ lock.releaseLock(); }
+}
+
+/** تریگر پنج‌دقیقه‌ای را می‌سازد (اگر نباشد). */
+function ensureTrigger(){
+  try{
+    var all = ScriptApp.getProjectTriggers();
+    for(var i = 0; i < all.length; i++){
+      if(all[i].getHandlerFunction() === 'rebuild') return false;
+    }
+    ScriptApp.newTrigger('rebuild').timeBased().everyMinutes(5).create();
+    return true;
+  }catch(err){ Logger.log('ensureTrigger: ' + err); return false; }
 }
 
 /**
@@ -184,7 +206,10 @@ function doPost(e){
 var MANUAL_RUN = 'این تابع برای درخواست‌های اپ است و دستی اجرا نمی‌شود. '
   + 'در منوی کشویی بالای صفحه «setup» را انتخاب کن و دوباره Run بزن.';
 
+var START = 0;
+
 function handle(e, body){
+  START = Date.now();
   var token = (body && body.token) || (e && e.parameter && e.parameter.token) || '';
   if(TOKEN && token !== TOKEN) return json({ok:false, error:'رمز اشتباه است'});
 
@@ -218,9 +243,10 @@ function handle(e, body){
   try{
     if(body.logs && body.logs.length) upsertLogs(body.logs);
     if(body.config) writeConfig(body.config);
-    /* ثبتِ خودِ رکورد باید سریع باشد؛ گزارش‌ها داده‌های مشتق‌شده‌اند و
-       چند ثانیه عقب‌تر بودنشان اشکالی ندارد — مگر پایان یک نوبت. */
-    maybeReports(needsReportNow(body.logs));
+    /* ثبت معمولی فقط یک سطر اضافه می‌کند و تمام. ساختن گزارش‌ها کار سنگینی است
+       و روی درخواست انجام نمی‌شود؛ یک تریگر زمانی هر ۵ دقیقه آن را می‌سازد.
+       فقط حذف و چک‌اوت — که کم پیش می‌آیند و مهم‌اند — همان‌جا بازسازی می‌کنند. */
+    if(needsReportNow(body.logs)) buildReports();
     return json(snapshot(since));
   }catch(err){
     return json({ok:false, error:String(err && err.message || err)});
@@ -240,10 +266,11 @@ function snapshot(since){
 }
 
 /** با هر تغییر این را عوض کن؛ اپ نشانش می‌دهد تا بفهمی کدام نسخه منتشر شده */
-var VERSION = 'v8';
+var VERSION = 'v10';
 
 function json(o){
   o.version = VERSION;
+  o.ms = START ? (Date.now() - START) : 0;      /* مدت کار خودِ سرور */
   /* تا معلوم شود کدام پروژه و کدام شیت جواب داده — برای عیب‌یابی دیپلوی */
   try{ o.scriptId = ScriptApp.getScriptId(); }catch(err){}
   try{ o.sheetName = SpreadsheetApp.getActiveSpreadsheet().getName(); }catch(err){}
@@ -351,13 +378,15 @@ function rowOf(log, rev, tsById){
 function upsertLogs(logs){
   var sh = logsSheet();
   var last = sh.getLastRow();
-  var existing = last > 1 ? sh.getRange(2, 1, last - 1, HEAD.length).getValues() : [];
+  /* فقط ستون شناسه و ستون زمان خوانده می‌شود، نه کل جدول — ثبت باید سبک باشد */
+  var idCol = last > 1 ? sh.getRange(2, 1, last - 1, 1).getValues() : [];
+  var tsCol = last > 1 ? sh.getRange(2, C.ts + 1, last - 1, 1).getValues() : [];
   var at = {}, tsById = {};
-  for(var i = 0; i < existing.length; i++){
-    var eid = String(existing[i][C.id] || '');
+  for(var i = 0; i < idCol.length; i++){
+    var eid = String(idCol[i][0] || '');
     if(!eid) continue;
     at[eid] = i + 2;
-    tsById[eid] = Number(existing[i][C.ts]) || 0;
+    tsById[eid] = Number(tsCol[i][0]) || 0;
   }
   /* rows in this batch can reference each other (a chore and its check-in) */
   for(var j = 0; j < logs.length; j++){
@@ -378,7 +407,8 @@ function upsertLogs(logs){
       var known = at[String(log.id)];
       if(known) drops.push(known);          /* سطرش از logs برداشته می‌شود */
       /* هرچه گوشی نفرستاده از خودِ سطر موجود برداشته می‌شود تا سطل کامل بماند */
-      binned.push(binRowOf(known ? merged(log, existing[known - 2]) : log, rev));
+      var stored = known ? sh.getRange(known, 1, 1, HEAD.length).getValues()[0] : null;
+      binned.push(binRowOf(stored ? merged(log, stored) : log, rev));
       continue;
     }
     var row = rowOf(log, rev, tsById);

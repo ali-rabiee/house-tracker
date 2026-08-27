@@ -2063,7 +2063,8 @@ document.getElementById('btnSyncTest').onclick = async () => {
     const dep = (url.match(/\/s\/([^/]+)\//) || [])[1] || '—';
     out = {
       'وضعیت HTTP': res.status + (res.ok ? ' (سالم)' : ''),
-      'مدت پاسخ': ((Date.now() - t0)/1000).toFixed(1) + ' ثانیه',
+      'مدت پاسخ': ((Date.now() - t0)/1000).toFixed(1) + ' ثانیه'
+                  + (j && typeof j.ms === 'number' ? ' (کار سرور: ' + (j.ms/1000).toFixed(1) + ' ثانیه)' : ''),
       'نسخهٔ کدی که جواب داد': (j && j.version) || '⛔ بدون نسخه — کد قدیمی جواب می‌دهد',
       'شیتی که جواب داد': (j && j.sheetName) || '—',
       'شناسهٔ پروژهٔ اسکریپت': (j && j.scriptId) || '—',
