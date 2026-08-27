@@ -244,6 +244,9 @@ var VERSION = 'v8';
 
 function json(o){
   o.version = VERSION;
+  /* تا معلوم شود کدام پروژه و کدام شیت جواب داده — برای عیب‌یابی دیپلوی */
+  try{ o.scriptId = ScriptApp.getScriptId(); }catch(err){}
+  try{ o.sheetName = SpreadsheetApp.getActiveSpreadsheet().getName(); }catch(err){}
   return ContentService.createTextOutput(JSON.stringify(o))
     .setMimeType(ContentService.MimeType.JSON);
 }

@@ -114,6 +114,7 @@ function createGas(codePath){
       BandingTheme: { LIGHT_GREY: 'LIGHT_GREY' }
     },
     Logger: { log: () => {} },
+    ScriptApp: { getScriptId: () => 'SCRIPT_ID_FAKE' },
     PropertiesService: { getScriptProperties: () => ({
       getProperty: k => (props.has(k) ? props.get(k) : null),
       setProperty: (k, v) => props.set(k, v),

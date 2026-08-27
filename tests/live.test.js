@@ -142,6 +142,8 @@ const becomes = async (fn, ms = 15000) => {
   const good = (await C.locator('#mBody').innerText()).replace(/\s+/g, ' ');
   ok('connection test reports a healthy sheet and its version',
      /سالم/.test(good) && /v\d/.test(good), good.slice(0, 110));
+  ok('and names the project that answered', /SCRIPT_ID_FAKE/.test(good),
+     (good.match(/شناسهٔ پروژهٔ اسکریپت [^ ]+/) || ['—'])[0]);
   await C.click('#tOk');
 
   await fetch(BASE + '/busy?n=1');

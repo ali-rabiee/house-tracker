@@ -2060,10 +2060,14 @@ document.getElementById('btnSyncTest').onclick = async () => {
     const text = await res.text();
     let j = null;
     try{ j = JSON.parse(text); }catch(e){}
+    const dep = (url.match(/\/s\/([^/]+)\//) || [])[1] || '—';
     out = {
       'وضعیت HTTP': res.status + (res.ok ? ' (سالم)' : ''),
       'مدت پاسخ': ((Date.now() - t0)/1000).toFixed(1) + ' ثانیه',
-      'نسخهٔ اسکریپت روی شیت': (j && j.version) || '— (نسخهٔ قدیمی؛ باید New version منتشر شود)',
+      'نسخهٔ کدی که جواب داد': (j && j.version) || '⛔ بدون نسخه — کد قدیمی جواب می‌دهد',
+      'شیتی که جواب داد': (j && j.sheetName) || '—',
+      'شناسهٔ پروژهٔ اسکریپت': (j && j.scriptId) || '—',
+      'شناسهٔ دیپلوی (از آدرس)': dep.slice(0, 12) + (dep.length > 12 ? '…' : ''),
       'نتیجه': !j ? 'پاسخ JSON نبود' : j.ok ? '✅ سالم' : (j.busy ? '⛔ قفل آزاد نشد' : '⛔ خطا'),
       'پیام سرور': (j && j.error) || '—',
       'تعداد رکورد دریافتی': j && j.logs ? j.logs.length : '—'
@@ -2080,9 +2084,18 @@ document.getElementById('btnSyncTest').onclick = async () => {
   const rows = Object.keys(out).map(k =>
     `<tr><td class="sub" style="white-space:nowrap">${esc(k)}</td><td>${esc(String(out[k]))}</td></tr>`).join('');
   openModal('تست اتصال', `<div class="tblwrap"><table>${rows}</table></div>
-    <p class="hint" style="margin-top:11px">اگر «نسخهٔ اسکریپت» خالی یا قدیمی بود، در Apps Script باید
-      Deploy ← Manage deployments ← ✏️ ← Version: <b>New version</b> بزنی (نه New deployment).</p>
+    <p class="hint" style="margin-top:11px">
+      برای یک تست مستقل، همین آدرس را در مرورگر باز کن — باید متنی شبیه
+      <span class="mono">{"ok":false,"error":"رمز اشتباه است","version":"…"}</span> ببینی.
+      اگر <b>version</b> نداشت، آن آدرس هنوز کد قدیمی را اجرا می‌کند و باید
+      یک <b>New deployment</b> بسازی و آدرس تازه‌اش را اینجا بگذاری.
+      «شناسهٔ پروژهٔ اسکریپت» هم باید با پروژه‌ای که ویرایش می‌کنی یکی باشد.
+    </p>
+    <label class="f" style="margin-top:9px"><span>همین آدرس</span>
+      <textarea id="bkText" rows="2" readonly>${esc(url)}</textarea></label>
+    <div class="row"><button class="btn sm" id="bkCopy">📋 کپی آدرس</button></div>
     <div class="row"><button class="btn primary" id="tOk">باشه</button></div>`);
+  bindBackupBox();
   document.getElementById('tOk').onclick = closeModal;
 };
 
