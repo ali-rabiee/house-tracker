@@ -154,6 +154,20 @@ const becomes = async (fn, ms = 15000) => {
      /قفل آزاد نشد|خطا/.test(bad), bad.slice(0, 110));
   await C.click('#tOk');
 
+  /* typing a new address without saving it is the trap that produced
+     "connection test fine, but sync says Load failed" */
+  await C.click('.tab[data-tab="settings"]');
+  await C.fill('#syncUrl', 'https://script.google.com/macros/s/OTHERDEPLOYMENT/exec');
+  await C.click('#btnSyncTest');
+  await C.waitForTimeout(1500);
+  const mismatch = (await C.locator('#mBody').innerText()).replace(/\s+/g, ' ');
+  ok('the test warns when the typed address is not the one in use',
+     /فرق دارد/.test(mismatch), mismatch.slice(0, 90));
+  ok('and it tested the address sync really uses',
+     /همانی که همگام‌سازی استفاده می‌کند/.test(mismatch) && /v\d/.test(mismatch));
+  await C.click('#tOk');
+  await C.fill('#syncUrl', BASE + '/exec');        // put it back
+
   /* a request that never comes back must not wedge sync for good */
   await fetch(BASE + '/hang');
   await C.click('.tab[data-tab="tasks"]');

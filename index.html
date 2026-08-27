@@ -1933,7 +1933,10 @@ async function doSync(quiet, opts){
       retrySoon('شیت دیر جواب داد');
       return {ok:false, busy:true};
     }
-    syncSt.err = (e && e.message) || 'خطای شبکه';
+    const raw = (e && e.message) || '';
+    syncSt.err = /load failed|failed to fetch|networkerror/i.test(raw)
+      ? `به سرور نرسید (آدرس ${depOf(SY.url)}…) — آدرس ممکن است حذف یا عوض شده باشد، یا اینترنت وصل نیست`
+      : (raw || 'خطای شبکه');
     if(!quiet) toast('همگام‌سازی نشد: ' + syncSt.err);
     paintSync();
     return {ok:false, error:syncSt.err};
@@ -1992,7 +1995,7 @@ function paintSync(){
   const s = document.getElementById('syncStatus');
   if(s){
     s.innerHTML = !syncOn() ? 'وصل نیست.'
-      : (syncSt.err ? `<b style="color:var(--bad)">خطا:</b> ${esc(syncSt.err)}`
+      : (syncSt.err ? `<b style="color:var(--bad)">خطا:</b> ${esc(syncSt.err)}<br><span class="sub">آدرس در حال استفاده: ${esc(depOf(SY.url))}…</span>`
          : syncSt.queued ? 'شیت الان مشغول است — خودکار دوباره تلاش می‌شود.'
          : syncSt.at ? `آخرین همگام‌سازی: ${stamp(syncSt.at)}` : 'هنوز همگام نشده.')
         + (pend ? ' • تغییرات ثبت‌نشده در صف است' : '');
@@ -2037,9 +2040,14 @@ document.getElementById('btnSyncNow').onclick = async () => {
 };
 /* One plain request, and the raw answer on screen: which build replied, how
    long it took, and the server's own words if it refused. */
+const depOf = u => ((String(u||'').match(/\/s\/([^/]+)\//) || [])[1] || '—');
+
 document.getElementById('btnSyncTest').onclick = async () => {
-  const url = document.getElementById('syncUrl').value.trim();
+  const typed = document.getElementById('syncUrl').value.trim();
   const token = document.getElementById('syncToken').value.trim();
+  /* آزمودنِ همان آدرسی که همگام‌سازی استفاده می‌کند، نه چیزی که در کادر تایپ شده */
+  const url = SY.url || typed;
+  const mismatch = SY.url && typed && typed !== SY.url;
   if(!url){ toast('اول آدرس را وارد کن'); return; }
   openModal('تست اتصال', '<div class="dlgmsg">در حال تست…</div>');
   const t0 = Date.now();
@@ -2060,8 +2068,9 @@ document.getElementById('btnSyncTest').onclick = async () => {
     const text = await res.text();
     let j = null;
     try{ j = JSON.parse(text); }catch(e){}
-    const dep = (url.match(/\/s\/([^/]+)\//) || [])[1] || '—';
+    const dep = depOf(url);
     out = {
+      'آدرسی که تست شد': SY.url ? 'همانی که همگام‌سازی استفاده می‌کند' : 'آدرس داخل کادر (هنوز ذخیره نشده)',
       'وضعیت HTTP': res.status + (res.ok ? ' (سالم)' : ''),
       'مدت پاسخ': ((Date.now() - t0)/1000).toFixed(1) + ' ثانیه'
                   + (j && typeof j.ms === 'number' ? ' (کار سرور: ' + (j.ms/1000).toFixed(1) + ' ثانیه)' : ''),
@@ -2084,7 +2093,14 @@ document.getElementById('btnSyncTest').onclick = async () => {
   }
   const rows = Object.keys(out).map(k =>
     `<tr><td class="sub" style="white-space:nowrap">${esc(k)}</td><td>${esc(String(out[k]))}</td></tr>`).join('');
-  openModal('تست اتصال', `<div class="tblwrap"><table>${rows}</table></div>
+  const warn = mismatch ? `<div class="warnbox" style="margin-bottom:11px">
+      ⚠️ آدرس داخل کادر با آدرسی که همگام‌سازی استفاده می‌کند فرق دارد.<br>
+      در حال استفاده: <span class="mono">${esc(depOf(SY.url))}…</span> —
+      داخل کادر: <span class="mono">${esc(depOf(typed))}…</span><br>
+      برای اینکه آدرس تازه واقعاً استفاده شود، باید <b>«اتصال و همگام‌سازی»</b> را بزنی.
+      <div class="row" style="margin-top:9px"><button class="btn sm primary" id="tUse">همین آدرس تازه را ذخیره کن</button></div>
+    </div>` : '';
+  openModal('تست اتصال', `${warn}<div class="tblwrap"><table>${rows}</table></div>
     <p class="hint" style="margin-top:11px">
       برای یک تست مستقل، همین آدرس را در مرورگر باز کن — باید متنی شبیه
       <span class="mono">{"ok":false,"error":"رمز اشتباه است","version":"…"}</span> ببینی.
@@ -2097,6 +2113,8 @@ document.getElementById('btnSyncTest').onclick = async () => {
     <div class="row"><button class="btn sm" id="bkCopy">📋 کپی آدرس</button></div>
     <div class="row"><button class="btn primary" id="tOk">باشه</button></div>`);
   bindBackupBox();
+  const use = document.getElementById('tUse');
+  if(use) use.onclick = () => { closeModal(); document.getElementById('btnSyncSave').click(); };
   document.getElementById('tOk').onclick = closeModal;
 };
 
