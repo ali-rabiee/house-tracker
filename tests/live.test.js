@@ -109,20 +109,48 @@ const becomes = async (fn, ms = 15000) => {
 
   /* one busy answer must not pin the indicator on "busy" for good */
   await C.waitForTimeout(1500);                      // let any pending sync settle first
-  await fetch(BASE + '/busy?n=2');                   // two busy answers in a row
-  await C.click('#syncChip');                        // ask for a sync; it gets them
+  await fetch(BASE + '/busy?n=1');                   // one transient refusal
+  await C.click('#syncChip');
   const seen = new Set();
   for (let i = 0; i < 40; i++) {                     // watch the indicator as it goes
     seen.add((await C.locator('#syncChip').innerText()).trim());
     await C.waitForTimeout(100);
   }
-  ok('a busy answer shows as queued while it retries',
+  ok('a passing refusal shows as queued while it retries',
      [...seen].some(t => /شلوغ|صف|همگام‌سازی/.test(t)), [...seen].join(' → '));
-
-  const cleared = await becomes(async () =>
-    /🔄 همگام/.test(await C.locator('#syncChip').innerText()), 25000);
-  ok('and clears itself once the retry succeeds', cleared,
+  ok('and clears itself once the retry succeeds',
+     await becomes(async () => /🔄 همگام/.test(await C.locator('#syncChip').innerText()), 20000),
      'chip: ' + (await C.locator('#syncChip').innerText()).trim());
+
+  /* a refusal that keeps coming must surface, not hide behind "busy" forever */
+  await fetch(BASE + '/busy?n=5');
+  await C.click('#syncChip');
+  const surfaced = await becomes(async () =>
+    /آفلاین|خطا/.test(await C.locator('#syncChip').innerText()), 20000);
+  ok('a persistent refusal stops hiding and reports itself', surfaced,
+     'chip: ' + (await C.locator('#syncChip').innerText()).trim());
+  const why = (await C.locator('#syncStatus').innerText()).replace(/\s+/g, ' ');
+  ok('and the settings page says what the server said', /شلوغ|قفل|خطا/.test(why), why.slice(0, 80));
+  await fetch(BASE + '/busy?n=0');
+  await C.click('#syncChip');
+  await C.waitForTimeout(1500);
+
+  /* the connection test must report the truth, good or bad */
+  await C.click('.tab[data-tab="settings"]');
+  await C.click('#btnSyncTest');
+  await C.waitForTimeout(1500);
+  const good = (await C.locator('#mBody').innerText()).replace(/\s+/g, ' ');
+  ok('connection test reports a healthy sheet and its version',
+     /سالم/.test(good) && /v\d/.test(good), good.slice(0, 110));
+  await C.click('#tOk');
+
+  await fetch(BASE + '/busy?n=1');
+  await C.click('#btnSyncTest');
+  await C.waitForTimeout(1500);
+  const bad = (await C.locator('#mBody').innerText()).replace(/\s+/g, ' ');
+  ok('and reports a refusal with the server\'s own words',
+     /قفل آزاد نشد|خطا/.test(bad), bad.slice(0, 110));
+  await C.click('#tOk');
 
   /* a request that never comes back must not wedge sync for good */
   await fetch(BASE + '/hang');

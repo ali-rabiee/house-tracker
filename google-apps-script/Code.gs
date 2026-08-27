@@ -209,8 +209,11 @@ function handle(e, body){
 
   /* نوشتن‌ها کوتاه‌اند، پس کمی صبر کردن برای نوبت بهتر از پس زدن است */
   var lock = LockService.getScriptLock();
-  if(!lock.tryLock(20000)){
-    return json({ok:false, busy:true, error:'شلوغ است، چند لحظهٔ دیگر دوباره تلاش می‌شود'});
+  var got = false;
+  try{ got = lock.tryLock(20000); }catch(err){ got = false; }
+  if(!got){
+    return json({ok:false, busy:true,
+      error:'۲۰ ثانیه منتظر نوبت ماندم و قفل آزاد نشد. اگر همیشگی است، در Apps Script بخش Executions را ببین: احتمالاً یک اجرا گیر کرده.'});
   }
   try{
     if(body.logs && body.logs.length) upsertLogs(body.logs);
@@ -236,7 +239,11 @@ function snapshot(since){
   };
 }
 
+/** با هر تغییر این را عوض کن؛ اپ نشانش می‌دهد تا بفهمی کدام نسخه منتشر شده */
+var VERSION = 'v8';
+
 function json(o){
+  o.version = VERSION;
   return ContentService.createTextOutput(JSON.stringify(o))
     .setMimeType(ContentService.MimeType.JSON);
 }

@@ -397,6 +397,7 @@
       <div class="row">
         <button class="btn primary" id="btnSyncSave">اتصال و همگام‌سازی</button>
         <button class="btn" id="btnSyncNow">🔄 همگام‌سازی الان</button>
+        <button class="btn ghost" id="btnSyncTest">🔎 تست اتصال</button>
       </div>
       <div class="row" id="syncLinked" style="display:none;margin-top:9px">
         <button class="btn" id="btnSyncLink">🔗 کپی لینک آماده برای بقیه</button>
@@ -1833,20 +1834,21 @@ let syncTimer, retryTimer, retries = 0;
 
 /* A busy Sheet is normal when several phones write at once. Back off a little
    each time rather than hammering it, and never show it as a failure. */
-const MAX_RETRIES = 5;
+/* One quiet retry is enough. If the Sheet is still refusing, show what it
+   actually said instead of sitting on "busy" — a hidden loop taught us
+   nothing last time. */
 function retrySoon(why){
-  retries += 1;
-  if(retries > MAX_RETRIES){        /* بعد از چند تلاش، دیگر پنهانش نکن */
+  if(retries >= 1){
+    retries = 0;
     syncSt.queued = false;
     syncSt.err = why || 'شیت جواب نداد';
-    retries = 0;
     paintSync();
     return;
   }
+  retries += 1;
   syncSt.queued = true;
   clearTimeout(retryTimer);
-  retryTimer = setTimeout(() => { syncSt.queued = false; doSync(true); },
-                          1500 * retries + Math.random() * 1500);
+  retryTimer = setTimeout(() => { syncSt.queued = false; doSync(true); }, 3000);
 }
 
 function loadSync(){
@@ -2033,6 +2035,57 @@ document.getElementById('btnSyncNow').onclick = async () => {
   const r = await doSync();
   if(r.ok) toast('همگام شد');
 };
+/* One plain request, and the raw answer on screen: which build replied, how
+   long it took, and the server's own words if it refused. */
+document.getElementById('btnSyncTest').onclick = async () => {
+  const url = document.getElementById('syncUrl').value.trim();
+  const token = document.getElementById('syncToken').value.trim();
+  if(!url){ toast('اول آدرس را وارد کن'); return; }
+  openModal('تست اتصال', '<div class="dlgmsg">در حال تست…</div>');
+  const t0 = Date.now();
+  let out;
+  try{
+    const stop = new AbortController();
+    const bell = setTimeout(() => stop.abort(), 30000);
+    let res;
+    try{
+      res = await fetch(url, {
+        method:'POST',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify({token, since:0}),
+        redirect:'follow',
+        signal: stop.signal
+      });
+    }finally{ clearTimeout(bell); }
+    const text = await res.text();
+    let j = null;
+    try{ j = JSON.parse(text); }catch(e){}
+    out = {
+      'وضعیت HTTP': res.status + (res.ok ? ' (سالم)' : ''),
+      'مدت پاسخ': ((Date.now() - t0)/1000).toFixed(1) + ' ثانیه',
+      'نسخهٔ اسکریپت روی شیت': (j && j.version) || '— (نسخهٔ قدیمی؛ باید New version منتشر شود)',
+      'نتیجه': !j ? 'پاسخ JSON نبود' : j.ok ? '✅ سالم' : (j.busy ? '⛔ قفل آزاد نشد' : '⛔ خطا'),
+      'پیام سرور': (j && j.error) || '—',
+      'تعداد رکورد دریافتی': j && j.logs ? j.logs.length : '—'
+    };
+    if(!j) out['متن خام'] = text.slice(0, 300);
+  }catch(e){
+    out = {
+      'وضعیت HTTP': '—',
+      'مدت پاسخ': ((Date.now() - t0)/1000).toFixed(1) + ' ثانیه',
+      'نتیجه': e && e.name === 'AbortError' ? '⛔ تا ۳۰ ثانیه جوابی نیامد' : '⛔ به سرور نرسید',
+      'پیام': (e && e.message) || '—'
+    };
+  }
+  const rows = Object.keys(out).map(k =>
+    `<tr><td class="sub" style="white-space:nowrap">${esc(k)}</td><td>${esc(String(out[k]))}</td></tr>`).join('');
+  openModal('تست اتصال', `<div class="tblwrap"><table>${rows}</table></div>
+    <p class="hint" style="margin-top:11px">اگر «نسخهٔ اسکریپت» خالی یا قدیمی بود، در Apps Script باید
+      Deploy ← Manage deployments ← ✏️ ← Version: <b>New version</b> بزنی (نه New deployment).</p>
+    <div class="row"><button class="btn primary" id="tOk">باشه</button></div>`);
+  document.getElementById('tOk').onclick = closeModal;
+};
+
 document.getElementById('btnSyncOff').onclick = async () => {
   if(!await ask('اتصال قطع شود؟ اطلاعات روی این گوشی باقی می‌ماند.', {ok:'قطع کن', danger:true})) return;
   SY = {url:'', token:''}; saveSync(); renderSync(); clearTimeout(pollTimer); toast('اتصال قطع شد');
